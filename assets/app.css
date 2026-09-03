@@ -89,6 +89,10 @@ h3 {
     min-height: 2.65rem;
 }
 
+.stButton > button[kind="primary"] {
+    color: var(--color-surface);
+}
+
 p,
 [data-testid="stCaptionContainer"] {
     line-height: 1.65;

@@ -8,11 +8,11 @@
 
 ## Current gate
 
-- The deterministic Financial Engine v0.1, K-SURE payment-context adapter, and Korea Eximbank reference-FX adapter are implemented and frozen.
+- The deterministic Financial Engine v0.1, K-SURE payment-context adapter, Korea Eximbank reference-FX adapter, End-to-End Web MVP, and accepted presentation layer are implemented and frozen.
 - Do not modify frozen behavior unless a new, evidenced P0 correctness issue is established.
 - New application layers must consume frozen components through explicit boundaries. External API access must never move inside Financial Engine calculations.
-- The next authorized implementation gate is the End-to-End Web MVP defined in `docs/product-spec.md`.
-- AI is a later sub-gate of the MVP and is limited to proposing DealCase values from documents and explaining deterministic outputs. AI must never become the authoritative financial calculator.
+- The current authorized gate is AI Financialization: structured document extraction, deterministic validation, explicit user review, and safe proposed Deal-input updates.
+- AI plain-Korean explanation is deferred. AI must never become the authoritative financial calculator.
 - Do not advance to insurance, guarantees, hedge execution, databases, authentication, multi-agent systems, RAG, microservices, or speculative provider abstractions.
 
 ## Anti-bloat rules

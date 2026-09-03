@@ -5,6 +5,17 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.ai.financialization import (
+    FinancializationError,
+    HedgeStatus,
+    ProposalBlockedError,
+    TimingAnchor,
+    analyze_demo_documents,
+    build_proposed_deal_patch,
+    currency_exposure as extracted_currency_exposure,
+    normalize_amount,
+    unsupported_currencies,
+)
 from src.domain.deal_case import (
     Currency,
     DealCase,
@@ -29,6 +40,11 @@ from src.finance.engine import (
 
 
 APP_CSS = (Path(__file__).parent / "assets" / "app.css").read_text(encoding="utf-8")
+DEMO_PDF_PATHS = (
+    Path(__file__).parent / "assets" / "demo" / "Sales_Contract.pdf",
+    Path(__file__).parent / "assets" / "demo" / "Supplier_PO_US.pdf",
+    Path(__file__).parent / "assets" / "demo" / "Supplier_PO_JP.pdf",
+)
 
 
 def decimal_from_widget(value: int | float) -> Decimal:
@@ -55,8 +71,62 @@ def apply_loaded_fx() -> None:
         st.session_state["fx_apply_notice"] = "Official reference FX applied to Deal inputs."
 
 
+def apply_ai_proposal() -> None:
+    proposal = st.session_state.get("ai_proposed_patch")
+    if proposal is None:
+        return
+    st.session_state["sale_amount_input"] = float(proposal.sale_amount_usd)
+    st.session_state["payment_method_input"] = proposal.payment_method.value
+    if proposal.usd_payable_amount is not None:
+        st.session_state["usd_payable_amount_input"] = float(
+            proposal.usd_payable_amount
+        )
+    if proposal.usd_payable_day is not None:
+        st.session_state["usd_payable_day_input"] = proposal.usd_payable_day
+    if proposal.jpy_payable_amount is not None:
+        st.session_state["jpy_payable_amount_input"] = float(
+            proposal.jpy_payable_amount
+        )
+    if proposal.jpy_payable_day is not None:
+        st.session_state["jpy_payable_day_input"] = proposal.jpy_payable_day
+    st.session_state["ai_apply_notice"] = "확인한 문서 값을 Deal 입력에 반영했습니다."
+
+
+def amount_text(value: str | None) -> str:
+    try:
+        amount = normalize_amount(value)
+    except ValueError:
+        return "확인 필요"
+    return f"{amount:,.2f}".rstrip("0").rstrip(".")
+
+
+def timing_text(anchor: TimingAnchor, days: int | None) -> str:
+    if days is None:
+        return "지급시점 확인 필요"
+    labels = {
+        TimingAnchor.SHIPMENT: "선적 후",
+        TimingAnchor.CONTRACT_DATE: "구매계약 후",
+        TimingAnchor.INVOICE: "송장 발행 후",
+        TimingAnchor.DELIVERY: "인도 후",
+        TimingAnchor.OTHER: "기타 기준 후",
+        TimingAnchor.UNKNOWN: "기산점 미확인 ·",
+    }
+    return f"{labels[anchor]} {days}일"
+
+
 reference = reference_deal()
 reference_rates = reference_fx()
+input_defaults = {
+    "sale_amount_input": float(reference.sale.amount),
+    "payment_method_input": reference.sale.payment_method.value,
+    "collection_day_input": reference.sale.collection_day,
+    "usd_payable_amount_input": float(reference.foreign_payables[0].amount),
+    "usd_payable_day_input": reference.foreign_payables[0].payment_day,
+    "jpy_payable_amount_input": float(reference.foreign_payables[1].amount),
+    "jpy_payable_day_input": reference.foreign_payables[1].payment_day,
+}
+for input_key, default_value in input_defaults.items():
+    st.session_state.setdefault(input_key, default_value)
 
 st.set_page_config(page_title="AI Trade Finance Pre-check", layout="wide")
 st.markdown(f"<style>{APP_CSS}</style>", unsafe_allow_html=True)
@@ -68,6 +138,198 @@ st.info(
     "사전 의사결정 지원용입니다. 은행 승인, 환율 예측, 신용점수 또는 금융 실행 서비스가 아닙니다."
 )
 
+st.subheader("거래서류로 시작")
+st.write(
+    "샘플 거래서류 3건을 AI가 읽고 이 거래에서 받을 돈, 나갈 돈, 통화와 지급시점을 정리합니다."
+)
+st.caption("샘플 문서는 모두 가상으로 생성된 데모 문서입니다.")
+document_columns = st.columns(3)
+document_labels = ("Sales Contract", "US Supplier PO", "Japan Supplier PO")
+for column, label, path in zip(document_columns, document_labels, DEMO_PDF_PATHS):
+    with column.container(border=True):
+        st.markdown(f"**{label}**")
+        st.download_button(
+            "PDF 보기 / 다운로드",
+            data=path.read_bytes(),
+            file_name=path.name,
+            mime="application/pdf",
+            key=f"download_{path.stem}",
+        )
+
+st.caption("AI 분석을 실행하면 해당 문서 내용이 설정된 AI API로 전송됩니다.")
+financialization = st.session_state.get("ai_financialization")
+analysis_requested = False
+if financialization is None:
+    analysis_requested = st.button(
+        "샘플 거래서류 AI 분석", type="primary", key="analyze_demo_documents"
+    )
+else:
+    st.success("AI 문서 분석 결과를 이 세션에서 재사용하고 있습니다.")
+    analysis_requested = st.button("다시 AI 분석", key="reanalyze_demo_documents")
+
+if analysis_requested:
+    if not os.environ.get("OPENAI_API_KEY"):
+        st.session_state["ai_error"] = (
+            "OPENAI_API_KEY가 없어 AI 문서 분석을 실행할 수 없습니다. "
+            "기존 결정론적 Deal 분석은 계속 사용할 수 있습니다."
+        )
+    else:
+        with st.spinner("샘플 거래서류를 분석하고 있습니다..."):
+            try:
+                financialization = analyze_demo_documents(DEMO_PDF_PATHS)
+            except FinancializationError:
+                st.session_state["ai_error"] = (
+                    "AI 문서 분석을 완료하지 못했습니다. 기존 Deal 입력은 변경되지 않았습니다."
+                )
+            else:
+                st.session_state["ai_financialization"] = financialization
+                st.session_state.pop("ai_error", None)
+
+if financialization is None and not os.environ.get("OPENAI_API_KEY"):
+    st.info(
+        "OPENAI_API_KEY가 설정되지 않아 AI 분석은 선택적으로 사용할 수 없습니다. "
+        "현재 Deal의 결정론적 분석에는 영향이 없습니다."
+    )
+if ai_error := st.session_state.get("ai_error"):
+    st.warning(ai_error)
+
+if financialization is not None:
+    st.markdown("### AI가 이 거래의 돈 흐름을 정리했어요")
+    st.badge("AI extracted from document", color="violet")
+    flow_columns = st.columns(2)
+    with flow_columns[0].container(border=True):
+        st.markdown("#### 받을 돈")
+        for receivable in financialization.receivables:
+            st.markdown(
+                f"### {receivable.currency_code or '통화 미확인'} "
+                f"{amount_text(receivable.amount)}"
+            )
+            st.write(timing_text(receivable.timing_anchor, receivable.timing_days))
+            st.write(receivable.payment_method.value)
+            st.caption(f"{receivable.source_filename}에서 확인")
+            st.caption(f"근거: {receivable.evidence}")
+    with flow_columns[1].container(border=True):
+        st.markdown("#### 먼저 나갈 돈")
+        for payable in financialization.payables:
+            st.markdown(
+                f"### {payable.currency_code or '통화 미확인'} "
+                f"{amount_text(payable.amount)}"
+            )
+            st.write(timing_text(payable.timing_anchor, payable.timing_days))
+            st.caption(f"{payable.source_filename}에서 확인")
+            st.caption(f"근거: {payable.evidence}")
+
+    st.markdown("#### 환율에 노출된 돈")
+    st.badge("Calculated result", color="blue")
+    extraction_valid = True
+    try:
+        exposures = extracted_currency_exposure(financialization)
+        unsupported = unsupported_currencies(financialization)
+    except ValueError:
+        extraction_valid = False
+        exposures = {}
+        unsupported = ()
+        st.error("문서의 금액 또는 통화 형식을 확인해야 하므로 적용 제안을 만들 수 없습니다.")
+    for currency, exposure in sorted(exposures.items()):
+        receivable_total = sum(
+            (
+                normalize_amount(item.amount)
+                for item in financialization.receivables
+                if item.currency_code and item.currency_code.upper() == currency
+            ),
+            Decimal("0"),
+        )
+        payable_total = sum(
+            (
+                normalize_amount(item.amount)
+                for item in financialization.payables
+                if item.currency_code and item.currency_code.upper() == currency
+            ),
+            Decimal("0"),
+        )
+        direction = (
+            "달러 가치가 떨어지면 불리합니다."
+            if currency == "USD" and exposure > 0
+            else "엔화 가치가 오르면 불리합니다."
+            if currency == "JPY" and exposure < 0
+            else "통화 방향별 영향을 별도로 확인해야 합니다."
+        )
+        st.write(
+            f"**{currency}** · 받을 돈 {receivable_total:,.0f} · "
+            f"낼 돈 {payable_total:,.0f} · 순노출 {exposure:+,.0f}"
+        )
+        st.caption(direction)
+
+    if unsupported:
+        extraction_valid = False
+        st.error(
+            "현재 MVP 계산 지원 통화는 KRW / USD / JPY입니다. "
+            "지원되지 않는 금액을 제외한 불완전한 계산은 수행하지 않습니다. "
+            f"확인된 미지원 통화: {', '.join(unsupported)}"
+        )
+
+    st.markdown("#### 회사에서 확인해주세요")
+    st.write(
+        "사내 가용자금 · 실제 차입금리 · 목표 마진 · 기존 환헤지 포지션 · "
+        "국내 생산비와 물류·통관비"
+    )
+    st.caption("이 항목들은 문서 추출값으로 현재 Deal 입력을 덮어쓰지 않습니다.")
+
+    hedge_confirmation = False
+    if financialization.hedge_status is HedgeStatus.NOT_FOUND:
+        st.info("기존 환헤지 여부는 문서에서 확인되지 않았습니다.")
+        hedge_confirmation = st.checkbox(
+            "현재 이 Deal에 별도로 반영해야 할 환헤지 포지션이 없음을 확인합니다.",
+            key="ai_hedge_confirmation",
+        )
+        if hedge_confirmation:
+            st.badge("User confirmed", color="blue")
+    else:
+        extraction_valid = False
+        st.error("환헤지 정보가 존재하거나 불명확하여 문서 제안을 Deal에 반영할 수 없습니다.")
+
+    st.info(
+        "대금회수 조건: 선적 후 90일. 현재 Deal의 D+N 기산점과 자동 연결하지 않았습니다."
+    )
+    st.caption(
+        "지급일 적용 규칙: 구매계약일을 현재 Deal의 D+0으로 명시적으로 취급할 때만 "
+        "CONTRACT_DATE +30을 D+30으로 제안합니다."
+    )
+
+    proposal = None
+    if extraction_valid:
+        try:
+            proposal = build_proposed_deal_patch(
+                financialization, contract_date_is_day_zero=True
+            )
+        except ProposalBlockedError as exc:
+            st.error(f"문서 제안 적용 차단: {exc}")
+    if proposal is not None:
+        st.markdown("#### Deal 입력 변경 제안")
+        proposed_changes = [
+            f"USD 수출대금 → {proposal.sale_amount_usd:,.0f}",
+            f"결제방식 → {proposal.payment_method.value}",
+        ]
+        if proposal.usd_payable_amount is not None:
+            proposed_changes.append(f"USD 외화비용 → {proposal.usd_payable_amount:,.0f}")
+        if proposal.usd_payable_day is not None:
+            proposed_changes.append(f"USD 지급일 → D+{proposal.usd_payable_day}")
+        if proposal.jpy_payable_amount is not None:
+            proposed_changes.append(f"JPY 외화비용 → {proposal.jpy_payable_amount:,.0f}")
+        if proposal.jpy_payable_day is not None:
+            proposed_changes.append(f"JPY 지급일 → D+{proposal.jpy_payable_day}")
+        for change in proposed_changes:
+            st.write(f"- {change}")
+        st.session_state["ai_proposed_patch"] = proposal
+        st.button(
+            "확인한 내용 Deal에 반영",
+            disabled=not hedge_confirmation,
+            on_click=apply_ai_proposal,
+            key="apply_ai_proposal",
+        )
+    if notice := st.session_state.pop("ai_apply_notice", None):
+        st.success(notice)
+
 st.sidebar.header("Deal 입력")
 st.sidebar.badge("Demo assumption", color="gray")
 st.sidebar.caption("기준 Deal 값이 미리 입력되어 있으며 언제든 수정할 수 있습니다.")
@@ -76,31 +338,47 @@ with st.sidebar.expander("거래 조건", expanded=True):
     sale_amount = st.number_input(
         "수출대금 (USD)",
         min_value=1.0,
-        value=float(reference.sale.amount),
         step=1000.0,
         key="sale_amount_input",
     )
     payment_method_value = st.selectbox(
-        "결제방식", [method.value for method in PaymentMethod], index=0
+        "결제방식",
+        [method.value for method in PaymentMethod],
+        key="payment_method_input",
     )
     collection_day = st.number_input(
-        "결제일 (D+)", min_value=0, value=reference.sale.collection_day, step=1
+        "결제일 (D+)",
+        min_value=0,
+        step=1,
+        key="collection_day_input",
     )
 
 with st.sidebar.expander("비용 및 지급", expanded=False):
     usd_payable = reference.foreign_payables[0]
     jpy_payable = reference.foreign_payables[1]
     usd_payable_amount = st.number_input(
-        "USD 외화비용", min_value=0.0, value=float(usd_payable.amount), step=1000.0
+        "USD 외화비용",
+        min_value=0.0,
+        step=1000.0,
+        key="usd_payable_amount_input",
     )
     usd_payable_day = st.number_input(
-        "USD 지급일 (D+)", min_value=0, value=usd_payable.payment_day, step=1
+        "USD 지급일 (D+)",
+        min_value=0,
+        step=1,
+        key="usd_payable_day_input",
     )
     jpy_payable_amount = st.number_input(
-        "JPY 외화비용", min_value=0.0, value=float(jpy_payable.amount), step=100000.0
+        "JPY 외화비용",
+        min_value=0.0,
+        step=100000.0,
+        key="jpy_payable_amount_input",
     )
     jpy_payable_day = st.number_input(
-        "JPY 지급일 (D+)", min_value=0, value=jpy_payable.payment_day, step=1
+        "JPY 지급일 (D+)",
+        min_value=0,
+        step=1,
+        key="jpy_payable_day_input",
     )
     advance, balance, logistics = reference.krw_costs
     advance_amount = st.number_input(

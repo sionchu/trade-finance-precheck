@@ -3,7 +3,7 @@ AI Trade Finance Pre-check — Product Spec v0.1
 Status: Canonical implementation and product specification
 Purpose: 2026 금융 AI Challenge MVP
 Scope rule: One export deal. Deterministic finance first.
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 ────────
 
@@ -14,14 +14,24 @@ FROZEN / IMPLEMENTED:
 • Financial Engine v0.1
 • K-SURE aggregate payment context
 • Korea Eximbank official reference FX
+• Deterministic End-to-End Web MVP
+• Accepted KRDS/Toss-inspired presentation layer
 
 VALIDATED / DEFERRED:
 
 • Bank of Korea ECOS funding benchmark / macro context
 
-NEXT GATE:
+CURRENT GATE:
 
-• End-to-End Web MVP
+• AI Financialization
+
+DEFERRED:
+
+• AI plain-Korean explanation
+• Bank of Korea ECOS adapter
+• EUR/CNY engine expansion
+• Insurance, guarantees and hedge engine
+• Database, authentication and deployment
 
 ────────
 
@@ -1022,7 +1032,7 @@ Output:
 
 The user reviews extracted values before calculation.
 
-16.2 Explanation
+16.2 Explanation — Deferred
 
 Explain:
 
@@ -1181,22 +1191,27 @@ The completed Financial Engine v0.1 gate satisfies:
 
 ────────
 
-21. Next Implementation Gate — End-to-End Web MVP
+21. Current Implementation Gate — AI Financialization
 
-The web MVP may consume the frozen Financial Engine, K-SURE payment-context
-adapter and Korea Eximbank reference-FX adapter through explicit boundaries.
+AI Financialization may extract document-supported facts into a proposed Deal
+input patch. Deterministic validation, visible user review and explicit Apply
+are required before any existing Deal input changes.
 
-The next gate does not authorize insurance, guarantees, hedge execution,
-databases, authentication, multi-agent systems, RAG, microservices or
-speculative provider abstractions.
+Document timing anchors must remain explicit. In particular, SHIPMENT +90 is
+not automatically equivalent to Deal D+90. CONTRACT_DATE timing may map to Deal
+D+N only through an explicit application rule that treats the current Deal
+contract date as D+0.
 
-Generative AI remains a later sub-gate of the MVP. When authorized, its scope is
-limited to:
+This gate is limited to:
 
-1. document extraction into proposed DealCase values;
-2. explanation of deterministic outputs.
+1. the bundled synthetic PDF demonstration;
+2. one structured extraction request for all documents;
+3. deterministic amount, currency, timing and payment-method validation;
+4. explicit user confirmation and a safe proposed Deal-input patch.
 
-AI must never become the authoritative financial calculator.
+AI explanation, arbitrary PDF upload, insurance, guarantees, hedge execution,
+databases, authentication, BOK integration, RAG, agents and deployment remain
+deferred. AI must never become the authoritative financial calculator.
 
 ────────
 
@@ -1206,7 +1221,8 @@ AI must never become the authoritative financial calculator.
 Web MVP caller
     ├──→ Financial Engine v0.1
     ├──→ K-SURE payment context
-    └──→ Korea Eximbank reference FX
+    ├──→ Korea Eximbank reference FX
+    └──→ AI Financialization → reviewed proposed Deal-input patch
 ```
 
 External APIs never run inside Financial Engine calculations. A caller converts
@@ -1217,5 +1233,6 @@ input explicitly.
 
 23. Deferred Product Gates
 
-Insurance, guarantee and FX-cover simulation remain deferred. They are not part
-of the End-to-End Web MVP gate and require a later explicit specification change.
+AI explanation, BOK integration, EUR/CNY engine expansion, insurance, guarantee,
+FX-cover simulation, databases, authentication and deployment remain deferred.
+They require a later explicit specification change.
