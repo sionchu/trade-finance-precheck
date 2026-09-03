@@ -109,22 +109,39 @@ class WebMvpTests(unittest.TestCase):
 
     def test_app_starts_without_api_credentials(self):
         app, _, _, _ = self.render_without_credentials()
-        self.assertEqual(app.title[0].value, "AI Trade Finance Pre-check")
+        self.assertEqual(app.title[0].value, "수출거래 사전점검")
 
     def test_default_reference_deal_renders_without_exception(self):
         app, _, _, _ = self.render_without_credentials()
         labels = {metric.label: metric.value for metric in app.metric}
-        self.assertEqual(app.metric[0].label, "금융비용 반영 Deal Margin")
+        self.assertEqual(app.metric[0].label, "실제로 남는 마진")
         self.assertEqual(app.metric[0].value, "14.64%")
-        self.assertEqual(labels["금융비용 반영 전 Deal Margin"], "15.00%")
-        self.assertEqual(labels["Deal 자금소요"], "KRW 119.000M")
-        self.assertEqual(labels["최대 외부차입"], "KRW 69.000M")
+        self.assertEqual(labels["현재 분석 환율"], "1,400원")
+        self.assertEqual(labels["목표마진 유지선"], "1,386.47원")
+        self.assertEqual(labels["거래에 가장 많이 필요한 돈"], "1억 1,900만원")
+        self.assertEqual(labels["최대로 빌려야 하는 돈"], "6,900만원")
+
+    def test_decision_first_information_hierarchy(self):
+        app, _, _, _ = self.render_without_credentials()
+        headings = [item.value for item in app.subheader]
+        expected_order = [
+            "이 거래, 현재 조건에서 버틸까요?",
+            "거래서류로 자동 입력하기",
+            "조건이 나빠지면 어떻게 될까요?",
+            "돈은 언제 가장 많이 필요할까요?",
+            "90일 기다릴까, 먼저 현금화할까?",
+            "공식 시장 정보",
+            "분석 근거",
+            "결과를 공유해야 하나요?",
+        ]
+        positions = [headings.index(label) for label in expected_order]
+        self.assertEqual(positions, sorted(positions))
 
     def test_report_download_is_available_without_credentials(self):
         app, _, _, _ = self.render_without_credentials()
         self.assertEqual(
             metric_by_label(app, "생성 기준").value,
-            "현재 Deal 입력 기반 분석",
+            "현재 거래 입력 기반 분석",
         )
         report_button = element_by_key(
             app.get("download_button"), "deal_report_download"
@@ -140,7 +157,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_missing_credentials_do_not_prevent_deterministic_analysis(self):
         app, _, _, _ = self.render_without_credentials()
-        self.assertTrue(any("MEETS TARGET" in message.value for message in app.success))
+        self.assertTrue(any("목표 충족" in message.value for message in app.success))
         self.assertEqual(len(app.dataframe), 2)
 
     def test_ai_section_safely_reports_missing_key(self):
@@ -159,7 +176,7 @@ class WebMvpTests(unittest.TestCase):
         self.assertIn("순노출 -3,000,000", visible)
         self.assertEqual(
             metric_by_label(app, "생성 기준").value,
-            "AI 분석 결과 존재 · 현재 Deal에는 미반영",
+            "AI 분석 결과 존재 · 현재 거래에는 미반영",
         )
         openai_extract.assert_called_once()
 
@@ -268,7 +285,7 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(app.session_state["ai_applied_patch"], applied_snapshot)
         self.assertEqual(
             metric_by_label(app, "생성 기준").value,
-            "AI 추출값 반영 후 현재 Deal에서 일부 값 수정",
+            "AI 추출값 반영 후 현재 거래에서 일부 값 수정",
         )
         openai_extract.assert_called_once()
 
