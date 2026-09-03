@@ -194,7 +194,7 @@ def build_deal_report(report: DealReportInput) -> bytes:
     meets = report.base_result.financing_adjusted_deal_margin >= report.deal.target_margin
     status_text = "목표 충족" if meets else "목표 미달"
     status_bg = PALE_GREEN if meets else PALE_RED
-    decision = Table([[ 
+    decision = Table([[
         _p(
             "현재 조건에서는 목표 마진을 충족합니다." if meets
             else "현재 조건에서는 목표 마진에 미달합니다.",
