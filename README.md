@@ -6,14 +6,12 @@ The canonical product definition is [docs/product-spec.md](docs/product-spec.md)
 
 ## Current state
 
-The deterministic Financial Engine v0.1 implements the canonical one-deal
-economics, dated cashflows, external financing, stress scenarios, USD/KRW
-thresholds, and receivable purchase simulation.
+The repository contains the frozen deterministic Financial Engine v0.1 and
+the K-SURE aggregate payment-context integration.
 
 ## Scope
 
-The implemented scope is limited to the deterministic Financial Engine v0.1
-defined in the product specification.
+The implemented scope is limited to those two components.
 
 ## Tests
 

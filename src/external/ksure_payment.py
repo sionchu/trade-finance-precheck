@@ -146,8 +146,14 @@ def parse_payment_context(
     body = _mapping(response.get("body"), "response.body")
     items = _mapping(body.get("items"), "response.body.items")
     item_list = _list(items.get("item"), "response.body.items.item")
-    if not item_list:
-        raise KsureResponseError("Successful K-SURE response contains no item")
+    if len(item_list) != 1:
+        raise KsureResponseError(
+            "Successful K-SURE response must contain exactly one item"
+        )
+    if "totalCount" in body and _count_or_none(body["totalCount"]) != 1:
+        raise KsureResponseError(
+            "Successful K-SURE response totalCount must equal one"
+        )
     item = _mapping(item_list[0], "response.body.items.item[0]")
 
     try:
@@ -197,7 +203,6 @@ def parse_payment_context(
 def fetch_payment_context(
     country_code: str,
     industry_major_code: str,
-    industry_middle_code: str | None = None,
     *,
     timeout_seconds: float = 10.0,
     open_url: Callable[..., Any] = urlopen,
@@ -211,8 +216,6 @@ def fetch_payment_context(
         "ctryCd": country_code,
         "industryLagCd": industry_major_code,
     }
-    if industry_middle_code is not None:
-        params["industryMidCd"] = industry_middle_code
     request = Request(
         f"{ENDPOINT}?{urlencode(params)}", headers={"Accept": "application/json"}
     )

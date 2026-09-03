@@ -88,6 +88,33 @@ class KsurePaymentParsingTests(unittest.TestCase):
     def test_item_array_is_parsed(self):
         self.assertEqual(self.parse().reference_year, 2025)
 
+    def test_successful_response_rejects_multiple_items(self):
+        payload = copy.deepcopy(SUCCESS_RESPONSE)
+        item = payload["response"]["body"]["items"]["item"][0]
+        payload["response"]["body"]["items"]["item"].append(copy.deepcopy(item))
+        payload["response"]["body"]["totalCount"] = 2
+
+        with self.assertRaisesRegex(KsurePaymentError, "exactly one item"):
+            self.parse(payload)
+
+    def test_successful_response_rejects_zero_items(self):
+        payload = copy.deepcopy(SUCCESS_RESPONSE)
+        payload["response"]["body"]["items"]["item"] = []
+        payload["response"]["body"]["totalCount"] = 0
+
+        with self.assertRaisesRegex(KsurePaymentError, "exactly one item"):
+            self.parse(payload)
+
+    def test_successful_singular_item_remains_valid(self):
+        self.assertEqual(self.parse().country_code, "450")
+
+    def test_singular_item_rejects_inconsistent_total_count(self):
+        payload = copy.deepcopy(SUCCESS_RESPONSE)
+        payload["response"]["body"]["totalCount"] = "2"
+
+        with self.assertRaisesRegex(KsurePaymentError, "totalCount must equal one"):
+            self.parse(payload)
+
     def test_result_code_3_with_null_body_is_no_data(self):
         payload = {
             "response": {
@@ -167,6 +194,10 @@ class KsurePaymentParsingTests(unittest.TestCase):
 
         self.assertEqual(captured["query"]["ctryCd"], ["450"])
         self.assertEqual(captured["query"]["industryLagCd"], ["29"])
+        self.assertEqual(
+            set(captured["query"]), {"serviceKey", "ctryCd", "industryLagCd"}
+        )
+        self.assertNotIn("industryMidCd", captured["query"])
         self.assertEqual(captured["timeout"], 4.0)
         self.assertEqual(context.reference_year, 2025)
 
