@@ -17,6 +17,7 @@ FROZEN / IMPLEMENTED:
 • Deterministic End-to-End Web MVP
 • Accepted KRDS/Toss-inspired presentation layer
 • AI Financialization
+• Deal Pre-check Report
 
 VALIDATED / DEFERRED:
 
@@ -24,7 +25,7 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• Deal Pre-check Report
+• Public Deployment / Submission Hardening
 
 DEFERRED:
 
@@ -1216,7 +1217,7 @@ deferred. AI must never become the authoritative financial calculator.
 
 ────────
 
-22. Current Implementation Gate — Deal Pre-check Report
+22. Frozen Gate — Deal Pre-check Report
 
 The Deal Pre-check Report is a deterministic, downloadable Korean business
 output generated from the current Deal inputs and already-computed canonical

@@ -37,7 +37,12 @@ from src.finance.engine import (
     evaluate_deal,
     solve_usd_krw_threshold,
 )
-from src.reporting.deal_report import DealReportInput, build_deal_report
+from src.reporting.deal_report import (
+    DealReportInput,
+    build_deal_report,
+    current_ai_provenance,
+    report_basis_text,
+)
 
 
 APP_CSS = (Path(__file__).parent / "assets" / "app.css").read_text(encoding="utf-8")
@@ -90,8 +95,8 @@ def apply_ai_proposal() -> None:
         )
     if proposal.jpy_payable_day is not None:
         st.session_state["jpy_payable_day_input"] = proposal.jpy_payable_day
+    st.session_state["ai_applied_patch"] = proposal
     st.session_state["ai_apply_notice"] = "확인한 문서 값을 Deal 입력에 반영했습니다."
-    st.session_state["ai_patch_applied"] = True
 
 
 def amount_text(value: str | None) -> str:
@@ -748,7 +753,14 @@ else:
         st.info("판단 포인트: 빠른 유동성 확보와 명시적 매입·할인비용 간의 교환관계입니다.")
 
 st.subheader("거래 금융 사전점검 보고서")
-report_uses_ai = bool(st.session_state.get("ai_patch_applied"))
+ai_provenance_status = current_ai_provenance(
+    st.session_state.get("ai_applied_patch"),
+    deal,
+)
+report_basis = report_basis_text(
+    ai_provenance_status,
+    financialization is not None,
+)
 official_context_loaded = bool(
     st.session_state.get("fx_reference_snapshot")
     or st.session_state.get("ksure_payment_context")
@@ -757,7 +769,7 @@ report_preview = st.columns(3)
 report_preview[0].metric("현재 상태", "목표 충족" if meets_target else "목표 미달")
 report_preview[1].metric(
     "생성 기준",
-    "AI 확인값 일부 반영" if report_uses_ai else "사용자 입력",
+    report_basis,
 )
 report_preview[2].metric(
     "공식 Context",
@@ -767,7 +779,6 @@ report_bytes = build_deal_report(
     DealReportInput(
         generated_at=datetime.now().astimezone(),
         deal=deal,
-        fx=fx,
         base_result=base_result,
         scenario_results=tuple(scenario_results.items()),
         zero_profit_threshold=zero_profit_threshold,
@@ -776,7 +787,7 @@ report_bytes = build_deal_report(
         fx_reference=st.session_state.get("fx_reference_snapshot"),
         payment_context=st.session_state.get("ksure_payment_context"),
         ai_analysis_exists=financialization is not None,
-        ai_patch_applied=report_uses_ai,
+        ai_provenance_status=ai_provenance_status,
         hedge_confirmed=bool(st.session_state.get("ai_hedge_confirmation")),
     )
 )

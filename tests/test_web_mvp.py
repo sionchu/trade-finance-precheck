@@ -67,6 +67,10 @@ def element_by_key(elements, key):
     return next(element for element in elements if element.key == key)
 
 
+def metric_by_label(app, label):
+    return next(metric for metric in app.metric if metric.label == label)
+
+
 class WebMvpTests(unittest.TestCase):
     def render_without_credentials(self):
         with (
@@ -118,6 +122,10 @@ class WebMvpTests(unittest.TestCase):
 
     def test_report_download_is_available_without_credentials(self):
         app, _, _, _ = self.render_without_credentials()
+        self.assertEqual(
+            metric_by_label(app, "생성 기준").value,
+            "현재 Deal 입력 기반 분석",
+        )
         report_button = element_by_key(
             app.get("download_button"), "deal_report_download"
         )
@@ -149,6 +157,10 @@ class WebMvpTests(unittest.TestCase):
         self.assertIn("JPY 3,000,000", visible)
         self.assertIn("순노출 +80,000", visible)
         self.assertIn("순노출 -3,000,000", visible)
+        self.assertEqual(
+            metric_by_label(app, "생성 기준").value,
+            "AI 분석 결과 존재 · 현재 Deal에는 미반영",
+        )
         openai_extract.assert_called_once()
 
     def test_proposal_does_not_change_deal_before_apply(self):
@@ -222,6 +234,41 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(
             element_by_key(app.number_input, "usd_payable_day_input").value,
             30,
+        )
+        self.assertEqual(
+            app.session_state["ai_applied_patch"],
+            app.session_state["ai_proposed_patch"],
+        )
+        self.assertEqual(
+            metric_by_label(app, "생성 기준").value,
+            "거래서류 AI 추출값 일부 반영",
+        )
+        openai_extract.assert_called_once()
+
+    def test_edit_after_ai_apply_updates_current_provenance_without_openai(self):
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch(
+                "src.ai.financialization.analyze_demo_documents",
+                return_value=extracted_demo(),
+            ) as openai_extract,
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.button, "analyze_demo_documents").click()
+            app.run()
+            element_by_key(app.checkbox, "ai_hedge_confirmation").check()
+            app.run()
+            element_by_key(app.button, "apply_ai_proposal").click()
+            app.run()
+            applied_snapshot = app.session_state["ai_applied_patch"]
+            element_by_key(app.number_input, "sale_amount_input").set_value(150000.0)
+            app.run()
+
+        self.assertEqual(app.session_state["ai_applied_patch"], applied_snapshot)
+        self.assertEqual(
+            metric_by_label(app, "생성 기준").value,
+            "AI 추출값 반영 후 현재 Deal에서 일부 값 수정",
         )
         openai_extract.assert_called_once()
 

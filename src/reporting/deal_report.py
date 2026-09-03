@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -19,7 +20,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from src.domain.deal_case import Currency, DealCase, FxRates, PaymentMethod
+from src.ai.financialization import ProposedDealPatch
+from src.domain.deal_case import Currency, DealCase, PaymentMethod
 from src.external.eximbank_fx import FxReferenceSnapshot
 from src.external.ksure_payment import PaymentContext
 from src.finance.engine import DealResult, Scenario
@@ -36,11 +38,57 @@ PALE_RED = colors.HexColor("#FBEDEE")
 PALE_AMBER = colors.HexColor("#FFF5DF")
 
 
+class AiProvenanceStatus(Enum):
+    NOT_APPLIED = "NOT_APPLIED"
+    CURRENT = "CURRENT"
+    MODIFIED_AFTER_APPLY = "MODIFIED_AFTER_APPLY"
+
+
+def current_ai_provenance(
+    applied_patch: ProposedDealPatch | None,
+    deal: DealCase,
+) -> AiProvenanceStatus:
+    if applied_patch is None:
+        return AiProvenanceStatus.NOT_APPLIED
+
+    payables = {payable.currency: payable for payable in deal.foreign_payables}
+    comparisons = [
+        deal.sale.amount == applied_patch.sale_amount_usd,
+        deal.sale.payment_method.value == applied_patch.payment_method.value,
+    ]
+    for currency, amount, day in (
+        (Currency.USD, applied_patch.usd_payable_amount, applied_patch.usd_payable_day),
+        (Currency.JPY, applied_patch.jpy_payable_amount, applied_patch.jpy_payable_day),
+    ):
+        payable = payables.get(currency)
+        if amount is not None:
+            comparisons.append(payable is not None and payable.amount == amount)
+        if day is not None:
+            comparisons.append(payable is not None and payable.payment_day == day)
+    return (
+        AiProvenanceStatus.CURRENT
+        if all(comparisons)
+        else AiProvenanceStatus.MODIFIED_AFTER_APPLY
+    )
+
+
+def report_basis_text(
+    status: AiProvenanceStatus,
+    ai_analysis_exists: bool,
+) -> str:
+    if status is AiProvenanceStatus.CURRENT:
+        return "거래서류 AI 추출값 일부 반영"
+    if status is AiProvenanceStatus.MODIFIED_AFTER_APPLY:
+        return "AI 추출값 반영 후 현재 Deal에서 일부 값 수정"
+    if ai_analysis_exists:
+        return "AI 분석 결과 존재 · 현재 Deal에는 미반영"
+    return "현재 Deal 입력 기반 분석"
+
+
 @dataclass(frozen=True)
 class DealReportInput:
     generated_at: datetime
     deal: DealCase
-    fx: FxRates
     base_result: DealResult
     scenario_results: tuple[tuple[Scenario, DealResult], ...]
     zero_profit_threshold: Decimal | None
@@ -49,7 +97,7 @@ class DealReportInput:
     fx_reference: FxReferenceSnapshot | None = None
     payment_context: PaymentContext | None = None
     ai_analysis_exists: bool = False
-    ai_patch_applied: bool = False
+    ai_provenance_status: AiProvenanceStatus = AiProvenanceStatus.NOT_APPLIED
     hedge_confirmed: bool = False
 
 
@@ -179,7 +227,10 @@ def build_deal_report(report: DealReportInput) -> bytes:
         title="거래 금융 사전점검 보고서", author="AI Trade Finance Pre-check",
     )
     story = []
-    basis = "거래서류 AI 추출값 일부 반영" if report.ai_patch_applied else "사용자 입력 기반 분석"
+    basis = report_basis_text(
+        report.ai_provenance_status,
+        report.ai_analysis_exists,
+    )
     story.extend([
         _p("AI Trade Finance Pre-check", styles["subtitle"]),
         _p("거래 금융 사전점검 보고서", styles["title"]),
@@ -308,25 +359,16 @@ def build_deal_report(report: DealReportInput) -> bytes:
     else:
         story.append(_p("공식 시장 Context가 이 보고서 생성 시점에 불러와지지 않았습니다.", styles["body"]))
 
-    confirmations = []
-    if report.ai_patch_applied:
-        confirmations.append("AI 제안 적용")
-    if report.hedge_confirmed:
-        confirmations.append("환헤지 확인")
     ai_provenance = (
-        "Deal 입력에 반영"
-        if report.ai_patch_applied
-        else "분석 결과 존재(Deal 미반영)"
-        if report.ai_analysis_exists
-        else "사용하지 않음"
+        report_basis_text(report.ai_provenance_status, report.ai_analysis_exists)
     )
     provenance = [
         ["구분", "이 보고서의 근거"],
         ["Observed official data", "불러온 Eximbank / K-SURE Context" if context_rows else "이 세션에 불러온 값 없음"],
         ["AI extracted from document", ai_provenance],
-        ["User confirmed", " / ".join(confirmations) if confirmations else "해당 없음"],
-        ["User-entered fact", "사내 가용자금, 실제 조달금리, 목표 마진, 편집한 거래조건"],
-        ["Demo assumption", "사용자가 변경하지 않은 기준 Deal 입력"],
+        ["User confirmed", "환헤지 확인" if report.hedge_confirmed else "해당 없음"],
+        ["Current Deal input", "Financial Engine에 사용된 현재 거래, 유동성, 목표, FX 입력"],
+        ["Demo baseline", "애플리케이션의 초기 canonical reference Deal"],
         ["Stress assumption", "USD -5%, JPY +10%, 금리 +1%p, 입금 +30일"],
         ["Calculated result", "마진, 자금소요, 외부차입, 환노출, 기준점"],
     ]
