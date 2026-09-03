@@ -634,7 +634,6 @@ Canonical demo parameters:
 |Field                    |Value           |
 |-------------------------|---------------:|
 |Purchase day             |D+65            |
-|Buyer contractual due day|D+90            |
 |Annual discount rate     |5.2%            |
 |Fee rate                 |0.15%           |
 
@@ -643,11 +642,15 @@ These are demo assumptions unless later replaced by official/bank data.
 The receivable KRW face value uses the active scenario USD/KRW from the Deal
 evaluation. No separate option-level settlement FX exists.
 
+The evaluation resolves one effective collection day from the DealCase or the
+active payment-delay scenario. That same day controls buyer cash collection on
+the hold path and remaining tenor on the early-purchase path.
+
 9.3 Discount Cost
 
 ```text
 Remaining Tenor
-= buyer due day - purchase day
+= effective collection day - purchase day
 ```
 
 ```text

@@ -149,6 +149,8 @@ class RequiredDeterministicTests(DecimalAssertions):
         result = evaluate_deal(self.deal, self.fx, purchase_option=option)
         purchase = result.receivable_purchase
         self.assertIsNotNone(purchase)
+        self.assertEqual(result.collection_day, 90)
+        self.assertEqual(purchase.purchase_day, 65)
         self.assertEqual(purchase.remaining_tenor_days, 25)
         self.assertDecimalClose(purchase.discount_cost_krw / MILLION, "0.499", "0.001")
         self.assertEqual(purchase.purchase_fee_krw, Decimal("210000.0000"))
@@ -177,15 +179,21 @@ class RequiredDeterministicTests(DecimalAssertions):
         base = evaluate_deal(
             self.deal,
             self.fx,
-            purchase_option=canonical_purchase_option(90),
+            purchase_option=canonical_purchase_option(),
         )
         delayed = evaluate_deal(
             self.deal,
             self.fx,
-            purchase_option=canonical_purchase_option(120),
+            collection_day=120,
+            purchase_option=canonical_purchase_option(),
         )
+        self.assertEqual(base.collection_day, 90)
+        self.assertEqual(delayed.collection_day, 120)
+        self.assertEqual(base.receivable_purchase.purchase_day, 65)
+        self.assertEqual(delayed.receivable_purchase.purchase_day, 65)
         self.assertEqual(base.receivable_purchase.remaining_tenor_days, 25)
         self.assertEqual(delayed.receivable_purchase.remaining_tenor_days, 55)
+        self.assertFalse(hasattr(canonical_purchase_option(), "buyer_due_day"))
         self.assertGreater(
             delayed.receivable_purchase.discount_cost_krw,
             base.receivable_purchase.discount_cost_krw,

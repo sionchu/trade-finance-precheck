@@ -53,7 +53,6 @@ class FundingSchedule:
 @dataclass(frozen=True)
 class ReceivablePurchaseOption:
     purchase_day: int
-    buyer_due_day: int
     annual_discount_rate: Decimal
     fee_rate: Decimal
 
@@ -98,11 +97,14 @@ def _combine_events(events: list[CashEvent]) -> tuple[CashEvent, ...]:
 
 
 def _purchase_result(
-    deal: DealCase, fx: FxRates, option: ReceivablePurchaseOption
+    deal: DealCase,
+    fx: FxRates,
+    option: ReceivablePurchaseOption,
+    effective_collection_day: int,
 ) -> ReceivablePurchaseResult:
-    remaining_tenor = option.buyer_due_day - option.purchase_day
+    remaining_tenor = effective_collection_day - option.purchase_day
     if remaining_tenor < 0:
-        raise ValueError("purchase_day cannot be after buyer_due_day")
+        raise ValueError("purchase_day cannot be after the effective collection day")
     if deal.sale.currency is not Currency.USD:
         raise ValueError("EARLY_RECEIVABLE_PURCHASE requires a USD receivable in v0.1")
     if deal.sale.payment_method is not PaymentMethod.OA:
@@ -131,6 +133,9 @@ def dated_cashflows(
     collection_day: int | None = None,
     purchase_option: ReceivablePurchaseOption | None = None,
 ) -> tuple[tuple[CashEvent, ...], ReceivablePurchaseResult | None]:
+    effective_collection_day = (
+        deal.sale.collection_day if collection_day is None else collection_day
+    )
     events = [
         CashEvent(cost.payment_day, -cost.amount_krw) for cost in deal.krw_costs
     ]
@@ -141,10 +146,16 @@ def dated_cashflows(
 
     purchase = None
     if purchase_option is None:
-        day = deal.sale.collection_day if collection_day is None else collection_day
-        events.append(CashEvent(day, fx.to_krw(deal.sale.amount, deal.sale.currency)))
+        events.append(
+            CashEvent(
+                effective_collection_day,
+                fx.to_krw(deal.sale.amount, deal.sale.currency),
+            )
+        )
     else:
-        purchase = _purchase_result(deal, fx, purchase_option)
+        purchase = _purchase_result(
+            deal, fx, purchase_option, effective_collection_day
+        )
         events.append(CashEvent(purchase.purchase_day, purchase.net_proceeds_krw))
     return _combine_events(events), purchase
 
@@ -209,10 +220,11 @@ def evaluate_deal(
         events, deal.available_cash_krw, deal.annual_funding_rate
     )
     purchase_cost = ZERO
-    result_collection_day = deal.sale.collection_day if collection_day is None else collection_day
+    effective_collection_day = (
+        deal.sale.collection_day if collection_day is None else collection_day
+    )
     if purchase is not None:
         purchase_cost = purchase.discount_cost_krw + purchase.purchase_fee_krw
-        result_collection_day = purchase.purchase_day
 
     adjusted_profit = gross_profit - funding.external_funding_cost_krw - purchase_cost
     return DealResult(
@@ -224,7 +236,7 @@ def evaluate_deal(
         funding=funding,
         financing_adjusted_deal_profit_krw=adjusted_profit,
         financing_adjusted_deal_margin=adjusted_profit / sales_krw,
-        collection_day=result_collection_day,
+        collection_day=effective_collection_day,
         receivable_purchase=purchase,
     )
 
@@ -293,10 +305,9 @@ def solve_usd_krw_threshold(
     return (low + high) / Decimal("2")
 
 
-def canonical_purchase_option(buyer_due_day: int = 90) -> ReceivablePurchaseOption:
+def canonical_purchase_option() -> ReceivablePurchaseOption:
     return ReceivablePurchaseOption(
         purchase_day=65,
-        buyer_due_day=buyer_due_day,
         annual_discount_rate=Decimal("0.052"),
         fee_rate=Decimal("0.0015"),
     )
