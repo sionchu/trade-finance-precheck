@@ -626,8 +626,7 @@ Do not claim the user is actually eligible for bank purchase.
 ReceivablePurchaseOption
 ├── purchase_day
 ├── annual_discount_rate
-├── fee_rate
-└── settlement_fx
+└── fee_rate
 ```
 
 Canonical demo parameters:
@@ -638,9 +637,11 @@ Canonical demo parameters:
 |Buyer contractual due day|D+90            |
 |Annual discount rate     |5.2%            |
 |Fee rate                 |0.15%           |
-|Settlement FX            |scenario USD/KRW|
 
 These are demo assumptions unless later replaced by official/bank data.
+
+The receivable KRW face value uses the active scenario USD/KRW from the Deal
+evaluation. No separate option-level settlement FX exists.
 
 9.3 Discount Cost
 

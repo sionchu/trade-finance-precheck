@@ -2,7 +2,13 @@ import unittest
 from dataclasses import FrozenInstanceError, replace
 from decimal import Decimal
 
-from src.domain.deal_case import Currency, FxRates, reference_deal, reference_fx
+from src.domain.deal_case import (
+    Currency,
+    FxRates,
+    PaymentMethod,
+    reference_deal,
+    reference_fx,
+)
 from src.finance.engine import (
     Scenario,
     canonical_purchase_option,
@@ -139,7 +145,7 @@ class RequiredDeterministicTests(DecimalAssertions):
         self.assertEqual(result.funding.points[-1].external_loan_outstanding_krw, ZERO)
 
     def test_11_early_receivable_purchase(self):
-        option = canonical_purchase_option(self.fx.usd_krw)
+        option = canonical_purchase_option()
         result = evaluate_deal(self.deal, self.fx, purchase_option=option)
         purchase = result.receivable_purchase
         self.assertIsNotNone(purchase)
@@ -160,7 +166,7 @@ class RequiredDeterministicTests(DecimalAssertions):
         result = evaluate_deal(
             self.deal,
             self.fx,
-            purchase_option=canonical_purchase_option(self.fx.usd_krw),
+            purchase_option=canonical_purchase_option(),
         )
         purchase_point = result.funding.points[-1]
         self.assertEqual(purchase_point.day, 65)
@@ -171,12 +177,12 @@ class RequiredDeterministicTests(DecimalAssertions):
         base = evaluate_deal(
             self.deal,
             self.fx,
-            purchase_option=canonical_purchase_option(self.fx.usd_krw, 90),
+            purchase_option=canonical_purchase_option(90),
         )
         delayed = evaluate_deal(
             self.deal,
             self.fx,
-            purchase_option=canonical_purchase_option(self.fx.usd_krw, 120),
+            purchase_option=canonical_purchase_option(120),
         )
         self.assertEqual(base.receivable_purchase.remaining_tenor_days, 25)
         self.assertEqual(delayed.receivable_purchase.remaining_tenor_days, 55)
@@ -216,11 +222,11 @@ class CanonicalInvariantTests(DecimalAssertions):
         self.assertLessEqual(richer.funding.maximum_external_borrowing_krw, self.base.funding.maximum_external_borrowing_krw)
 
     def test_early_purchase_leaves_no_repaid_borrowing_outstanding(self):
-        early = evaluate_deal(self.deal, self.fx, purchase_option=canonical_purchase_option(self.fx.usd_krw))
+        early = evaluate_deal(self.deal, self.fx, purchase_option=canonical_purchase_option())
         self.assertEqual(early.funding.points[-1].external_loan_outstanding_krw, ZERO)
 
     def test_higher_discount_rate_cannot_reduce_purchase_cost(self):
-        option = canonical_purchase_option(self.fx.usd_krw)
+        option = canonical_purchase_option()
         base = evaluate_deal(self.deal, self.fx, purchase_option=option)
         higher = evaluate_deal(
             self.deal,
@@ -237,6 +243,26 @@ class CanonicalInvariantTests(DecimalAssertions):
             self.base.sales_krw = Decimal("0")
         with self.assertRaises(TypeError):
             self.base.currency_exposure[Currency.USD] = Decimal("0")
+
+    def test_early_purchase_uses_active_usd_fx_as_single_valuation_source(self):
+        option = canonical_purchase_option()
+        active_fx = replace(self.fx, usd_krw=Decimal("1300"))
+        result = evaluate_deal(self.deal, active_fx, purchase_option=option)
+
+        self.assertFalse(hasattr(option, "settlement_fx"))
+        self.assertEqual(result.sales_krw, Decimal("130000000"))
+        self.assertEqual(
+            result.receivable_purchase.face_value_krw, result.sales_krw
+        )
+
+    def test_early_purchase_rejects_usd_tt_receivable(self):
+        tt_deal = replace(
+            self.deal,
+            sale=replace(self.deal.sale, payment_method=PaymentMethod.TT),
+        )
+
+        with self.assertRaisesRegex(ValueError, "requires an O/A receivable"):
+            evaluate_deal(tt_deal, self.fx, purchase_option=canonical_purchase_option())
 
 
 class GenericCashflowTests(unittest.TestCase):

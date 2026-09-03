@@ -4,7 +4,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Mapping
 
-from src.domain.deal_case import Currency, DealCase, FxRates
+from src.domain.deal_case import Currency, DealCase, FxRates, PaymentMethod
 
 
 ZERO = Decimal("0")
@@ -56,7 +56,6 @@ class ReceivablePurchaseOption:
     buyer_due_day: int
     annual_discount_rate: Decimal
     fee_rate: Decimal
-    settlement_fx: Decimal
 
 
 @dataclass(frozen=True)
@@ -99,14 +98,16 @@ def _combine_events(events: list[CashEvent]) -> tuple[CashEvent, ...]:
 
 
 def _purchase_result(
-    deal: DealCase, option: ReceivablePurchaseOption
+    deal: DealCase, fx: FxRates, option: ReceivablePurchaseOption
 ) -> ReceivablePurchaseResult:
     remaining_tenor = option.buyer_due_day - option.purchase_day
     if remaining_tenor < 0:
         raise ValueError("purchase_day cannot be after buyer_due_day")
     if deal.sale.currency is not Currency.USD:
         raise ValueError("EARLY_RECEIVABLE_PURCHASE requires a USD receivable in v0.1")
-    face_value = deal.sale.amount * option.settlement_fx
+    if deal.sale.payment_method is not PaymentMethod.OA:
+        raise ValueError("EARLY_RECEIVABLE_PURCHASE requires an O/A receivable")
+    face_value = fx.to_krw(deal.sale.amount, deal.sale.currency)
     discount = (
         face_value
         * option.annual_discount_rate
@@ -143,7 +144,7 @@ def dated_cashflows(
         day = deal.sale.collection_day if collection_day is None else collection_day
         events.append(CashEvent(day, fx.to_krw(deal.sale.amount, deal.sale.currency)))
     else:
-        purchase = _purchase_result(deal, purchase_option)
+        purchase = _purchase_result(deal, fx, purchase_option)
         events.append(CashEvent(purchase.purchase_day, purchase.net_proceeds_krw))
     return _combine_events(events), purchase
 
@@ -292,13 +293,10 @@ def solve_usd_krw_threshold(
     return (low + high) / Decimal("2")
 
 
-def canonical_purchase_option(
-    settlement_fx: Decimal, buyer_due_day: int = 90
-) -> ReceivablePurchaseOption:
+def canonical_purchase_option(buyer_due_day: int = 90) -> ReceivablePurchaseOption:
     return ReceivablePurchaseOption(
         purchase_day=65,
         buyer_due_day=buyer_due_day,
         annual_discount_rate=Decimal("0.052"),
         fee_rate=Decimal("0.0015"),
-        settlement_fx=settlement_fx,
     )
