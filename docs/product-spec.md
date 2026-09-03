@@ -3,18 +3,17 @@ AI Trade Finance Pre-check — Product Spec v0.1
 Status: Canonical pre-implementation spec
 Purpose: 2026 금융 AI Challenge MVP
 Scope rule: One export deal. Deterministic finance first.
-Supersedes: trade-finance-product-spec-v0.md
 Last updated: 2026-09-03
 
 ────────
 
-0. Clean-v0 Decision
+0. Canonical Scope and Model
 
-This version makes one structural correction to v0:
+Canonical model principle:
 
 > A trade deal is not financially complete if the engine only calculates FX and an abstract funding-rate cost.
 
-The canonical model now separates:
+The canonical model separates:
 
 1. Deal economics — sales, foreign inputs, KRW costs
 2. Liquidity requirement — how much cash the deal requires and when
@@ -22,7 +21,7 @@ The canonical model now separates:
 4. Receivable monetization — wait for the buyer or sell/purchase the receivable early
 5. Risk-transfer context — insurance / guarantee / FX-cover as later option simulations
 
-The project is still not a trade-finance platform.
+The project is not a trade-finance platform.
 
 The v0.1 implementation gate only includes:
 
@@ -353,8 +352,6 @@ Interpretation:
 ────────
 
 7. Liquidity and Working-Capital Financing
-
-This section supersedes the v0 funding model.
 
 7.1 Peak Deal Funding Requirement
 
@@ -823,7 +820,7 @@ Never present this as an FX forecast.
 
 13. Insurance and Guarantee Model — Next Gate
 
-These concepts now belong to the product model, but not the first Codex implementation.
+These concepts belong to the product model, but not the first Codex implementation.
 
 13.1 Export Credit Insurance
 
@@ -992,7 +989,7 @@ P1 Deferred
 
 16. AI Responsibility
 
-AI still has only two jobs.
+AI has only two jobs.
 
 16.1 Document Extraction
 
@@ -1167,7 +1164,7 @@ Do not proceed to insurance, guarantee, external APIs or UI until:
 
 ────────
 
-21. First Codex Task — Revised
+21. First Codex Task
 
 ```text
 Read docs/product-spec.md.
