@@ -1,9 +1,27 @@
 AI Trade Finance Pre-check — Product Spec v0.1
 
-Status: Canonical pre-implementation spec
+Status: Canonical implementation and product specification
 Purpose: 2026 금융 AI Challenge MVP
 Scope rule: One export deal. Deterministic finance first.
 Last updated: 2026-09-03
+
+────────
+
+Implementation State
+
+FROZEN / IMPLEMENTED:
+
+• Financial Engine v0.1
+• K-SURE aggregate payment context
+• Korea Eximbank official reference FX
+
+VALIDATED / DEFERRED:
+
+• Bank of Korea ECOS funding benchmark / macro context
+
+NEXT GATE:
+
+• End-to-End Web MVP
 
 ────────
 
@@ -23,7 +41,7 @@ The canonical model separates:
 
 The project is not a trade-finance platform.
 
-The v0.1 implementation gate only includes:
+Financial Engine v0.1 includes:
 
 • Base Deal
 • External working-capital financing
@@ -31,7 +49,7 @@ The v0.1 implementation gate only includes:
 • O/A receivable early-purchase simulation
 • FX / rate / payment-delay stress
 
-Insurance and guarantee are specified as the next gate, not the first implementation task.
+Insurance, guarantees and FX cover remain deferred product options.
 
 ────────
 
@@ -103,7 +121,7 @@ Early receivable purchase
 Financial explanation
 ```
 
-Later, after the engine gate passes:
+Deferred product options:
 
 ```text
 Export credit insurance
@@ -822,9 +840,9 @@ Never present this as an FX forecast.
 
 ────────
 
-13. Insurance and Guarantee Model — Next Gate
+13. Insurance and Guarantee Model — Deferred Scope
 
-These concepts belong to the product model, but not the first Codex implementation.
+These concepts belong to the product model, but are not authorized in the current gate.
 
 13.1 Export Credit Insurance
 
@@ -938,30 +956,26 @@ P0
 
 Korea Eximbank FX
 
-Use for:
+Implemented use:
 
-• USD/KRW reference
-• JPY/KRW reference
+• `deal_bas_r` as the official neutral USD/KRW reference FX
+• `deal_bas_r` as the official neutral JPY/KRW-per-100 reference FX
 
-Persist:
-
-```text
-value
-source
-fetched_at
-```
+The Financial Engine retains one rate per currency. TTB/TTS are not implemented
+application behavior, and reference FX is not an achieved customer settlement rate.
 
 K-SURE Export Payment Information
 
 Use for country/industry context such as:
 
 • payment terms,
-• payment period,
-• delinquency,
-• average delinquency duration,
-• default-related aggregate statistics.
+• average payment period,
+• late-payment rate,
+• average late-payment period,
+• payment-period distribution.
 
 Do not manufacture an AI risk score.
+K-SURE aggregate context is not individual buyer risk prediction.
 
 K-SURE Country Risk
 
@@ -971,9 +985,13 @@ Do not claim it is individual buyer default probability.
 
 Bank of Korea ECOS
 
-Use for rate context / corporate-lending benchmark.
+Validated / deferred series:
 
-Company-entered actual borrowing rate remains authoritative.
+• `121Y006` / `BECBLA02` — 예금은행 대출금리(신규취급액 기준), 기업대출, monthly, annualized percent → `FUNDING_BENCHMARK`
+• `722Y001` / `0101000` — 한국은행 기준금리, monthly → `MACRO_CONTEXT`
+
+Neither series overwrites `DealCase.annual_funding_rate`. The company/user-entered
+actual borrowing rate remains authoritative. No BOK ECOS adapter is implemented.
 
 P1 Deferred
 
@@ -1152,9 +1170,9 @@ Invariants
 
 ────────
 
-20. Go / No-Go Gate — Financial Engine v0.1
+20. Frozen Gate — Financial Engine v0.1
 
-Do not proceed to insurance, guarantee, external APIs or UI until:
+The completed Financial Engine v0.1 gate satisfies:
 
 • DealCase is cleanly represented
 • internal cash and external borrowing are separate concepts
@@ -1168,93 +1186,41 @@ Do not proceed to insurance, guarantee, external APIs or UI until:
 
 ────────
 
-21. First Codex Task
+21. Next Implementation Gate — End-to-End Web MVP
 
-```text
-Read docs/product-spec.md.
+The web MVP may consume the frozen Financial Engine, K-SURE payment-context
+adapter and Korea Eximbank reference-FX adapter through explicit boundaries.
 
-Implement only the deterministic Financial Engine v0.1.
+The next gate does not authorize insurance, guarantees, hedge execution,
+databases, authentication, multi-agent systems, RAG, microservices or
+speculative provider abstractions.
 
-Required:
-1. DealCase model
-2. dated KRW-equivalent cashflow engine
-3. currency exposure calculation
-4. peak deal funding requirement
-5. allocated internal cash
-6. just-in-time external borrowing schedule
-7. external borrowing interest
-8. five canonical stress scenarios
-9. USD zero-profit and target-margin threshold solver
-10. hold-to-maturity receivable path
-11. EARLY_RECEIVABLE_PURCHASE cashflow simulation
-12. all required deterministic tests
+Generative AI remains a later sub-gate of the MVP. When authorized, its scope is
+limited to:
 
-Do not implement:
-- web UI
-- LLM
-- external API clients
-- insurance
-- guarantees
-- FX-cover / hedge
-- L/C
-- D/A
-- D/P
-- database
-- authentication
-- RAG
-- multi-agent
-- provider/factory abstraction
+1. document extraction into proposed DealCase values;
+2. explanation of deterministic outputs.
 
-Use the formulas and reference values in product-spec.md as the
-authoritative specification.
-
-If a financial assumption is missing, do not silently invent it.
-Report the ambiguity.
-
-Run the complete test suite and report exact results.
-```
+AI must never become the authoritative financial calculator.
 
 ────────
 
-22. Minimal Repository Shape
+22. Implemented Component Boundaries
 
 ```text
-/
-├── docs/
-│   └── product-spec.md
-├── src/
-│   ├── domain/
-│   │   └── deal_case.*
-│   └── finance/
-│       ├── cashflow.*
-│       ├── engine.*
-│       ├── financing.*
-│       ├── receivables.*
-│       └── scenarios.*
-└── tests/
-    └── test_reference_deal.*
+Web MVP caller
+    ├──→ Financial Engine v0.1
+    ├──→ K-SURE payment context
+    └──→ Korea Eximbank reference FX
 ```
 
-This is illustrative, not mandatory.
-
-Do not create an insurance/ package before insurance simulation is actually implemented.
+External APIs never run inside Financial Engine calculations. A caller converts
+the Eximbank reference snapshot into the engine's existing one-rate-per-currency
+input explicitly.
 
 ────────
 
-23. Next Product Gate
+23. Deferred Product Gates
 
-Only after Financial Engine v0.1 passes:
-
-```text
-Financial Option Simulator v0.2
-```
-
-Candidate order:
-
-1. export credit insurance simulation
-2. export credit guarantee / financing assumption
-3. FX insurance / hedge simulation
-
-Do not implement all three simultaneously.
-
-Choose one based on the strongest available official input data and the clearest demo value.
+Insurance, guarantee and FX-cover simulation remain deferred. They are not part
+of the End-to-End Web MVP gate and require a later explicit specification change.

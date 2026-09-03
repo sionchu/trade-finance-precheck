@@ -10,9 +10,14 @@ The repository contains the frozen deterministic Financial Engine v0.1,
 the K-SURE aggregate payment-context integration, and the Korea Eximbank
 official reference-FX integration.
 
+The Bank of Korea ECOS funding benchmark and macro context are validated but
+deferred; no ECOS adapter is implemented.
+
 ## Scope
 
-The implemented scope is limited to those components.
+The next implementation gate is the End-to-End Web MVP. Insurance, guarantees,
+hedge execution, databases, authentication, and generative AI are not part of
+the current implemented scope.
 
 ## Tests
 

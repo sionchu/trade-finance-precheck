@@ -8,16 +8,18 @@
 
 ## Current gate
 
-- This repository is pre-implementation.
-- Do not implement the application until explicitly requested.
-- When implementation is authorized, implement only the deterministic Financial Engine v0.1 gate defined in `docs/product-spec.md`.
-- Do not advance to insurance, guarantees, external APIs, UI, or later product gates until the v0.1 financial-engine gate passes.
+- The deterministic Financial Engine v0.1, K-SURE payment-context adapter, and Korea Eximbank reference-FX adapter are implemented and frozen.
+- Do not modify frozen behavior unless a new, evidenced P0 correctness issue is established.
+- New application layers must consume frozen components through explicit boundaries. External API access must never move inside Financial Engine calculations.
+- The next authorized implementation gate is the End-to-End Web MVP defined in `docs/product-spec.md`.
+- AI is a later sub-gate of the MVP and is limited to proposing DealCase values from documents and explaining deterministic outputs. AI must never become the authoritative financial calculator.
+- Do not advance to insurance, guarantees, hedge execution, databases, authentication, multi-agent systems, RAG, microservices, or speculative provider abstractions.
 
 ## Anti-bloat rules
 
 - Add only files and abstractions required by the current authorized gate.
 - Do not create duplicate spec variants or filenames containing `v0`, `v2`, `final`, `new`, or `refactored`.
-- Do not add frontend/backend scaffolding, dependencies, CI, issue templates, databases, authentication, RAG, multi-agent systems, provider/factory abstractions, microservices, or deployment configuration unless a later explicit task and spec revision require them.
+- Do not add dependencies, CI, issue templates, databases, authentication, RAG, multi-agent systems, provider/factory abstractions, microservices, or deployment configuration unless an explicit authorized gate requires them.
 - Do not create speculative packages for deferred financial options.
 - Preserve a single deterministic model; financial options modify cashflow or risk assumptions rather than introducing agent architectures.
 
@@ -36,5 +38,4 @@
 - Preserve unrelated user changes.
 - Keep secrets and environment files out of Git.
 - Do not broaden scope without an explicit product-spec revision.
-- Do not implement the Financial Engine in repository-setup tasks.
-
+- Preserve frozen component boundaries in later application work.
