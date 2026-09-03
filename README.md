@@ -6,12 +6,13 @@ The canonical product definition is [docs/product-spec.md](docs/product-spec.md)
 
 ## Current state
 
-The repository contains the frozen deterministic Financial Engine v0.1 and
-the K-SURE aggregate payment-context integration.
+The repository contains the frozen deterministic Financial Engine v0.1,
+the K-SURE aggregate payment-context integration, and the Korea Eximbank
+official reference-FX integration.
 
 ## Scope
 
-The implemented scope is limited to those two components.
+The implemented scope is limited to those components.
 
 ## Tests
 
