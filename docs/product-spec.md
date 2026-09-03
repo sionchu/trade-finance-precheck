@@ -16,6 +16,7 @@ FROZEN / IMPLEMENTED:
 • Korea Eximbank official reference FX
 • Deterministic End-to-End Web MVP
 • Accepted KRDS/Toss-inspired presentation layer
+• AI Financialization
 
 VALIDATED / DEFERRED:
 
@@ -23,7 +24,7 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• AI Financialization
+• Deal Pre-check Report
 
 DEFERRED:
 
@@ -1191,7 +1192,7 @@ The completed Financial Engine v0.1 gate satisfies:
 
 ────────
 
-21. Current Implementation Gate — AI Financialization
+21. Frozen Gate — AI Financialization
 
 AI Financialization may extract document-supported facts into a proposed Deal
 input patch. Deterministic validation, visible user review and explicit Apply
@@ -1215,7 +1216,21 @@ deferred. AI must never become the authoritative financial calculator.
 
 ────────
 
-22. Implemented Component Boundaries
+22. Current Implementation Gate — Deal Pre-check Report
+
+The Deal Pre-check Report is a deterministic, downloadable Korean business
+output generated from the current Deal inputs and already-computed canonical
+results. It may include official context already loaded in the session and
+explicit AI/user provenance, but report generation must not call AI or external
+APIs and must not add financial calculations.
+
+The report is generated in memory and is not persisted. It is a pre-decision
+aid, not a loan approval, credit assessment, accounting or legal statement, FX
+forecast, or contract acceptance recommendation.
+
+────────
+
+23. Implemented Component Boundaries
 
 ```text
 Web MVP caller
@@ -1231,7 +1246,7 @@ input explicitly.
 
 ────────
 
-23. Deferred Product Gates
+24. Deferred Product Gates
 
 AI explanation, BOK integration, EUR/CNY engine expansion, insurance, guarantee,
 FX-cover simulation, databases, authentication and deployment remain deferred.

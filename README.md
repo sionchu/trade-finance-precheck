@@ -12,6 +12,9 @@ official reference-FX integration, exposed through a deterministic Streamlit
 Web MVP. The MVP also includes optional AI financialization of the bundled
 synthetic trade-document demo.
 
+The current deterministic analysis can also be downloaded as a Deal Pre-check
+Report. Report generation does not require AI or official-data credentials.
+
 The Bank of Korea ECOS funding benchmark and macro context are validated but
 deferred; no ECOS adapter is implemented.
 

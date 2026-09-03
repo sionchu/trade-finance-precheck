@@ -116,6 +116,14 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(labels["Deal 자금소요"], "KRW 119.000M")
         self.assertEqual(labels["최대 외부차입"], "KRW 69.000M")
 
+    def test_report_download_is_available_without_credentials(self):
+        app, _, _, _ = self.render_without_credentials()
+        report_button = element_by_key(
+            app.get("download_button"), "deal_report_download"
+        )
+        self.assertEqual(report_button.label, "거래 사전점검 보고서 다운로드")
+        self.assertTrue(report_button.proto.url.endswith(".pdf"))
+
     def test_external_apis_are_not_invoked_on_initial_render(self):
         _, eximbank_fetch, ksure_fetch, openai_extract = self.render_without_credentials()
         eximbank_fetch.assert_not_called()

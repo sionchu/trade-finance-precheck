@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import os
 from pathlib import Path
@@ -37,6 +37,7 @@ from src.finance.engine import (
     evaluate_deal,
     solve_usd_krw_threshold,
 )
+from src.reporting.deal_report import DealReportInput, build_deal_report
 
 
 APP_CSS = (Path(__file__).parent / "assets" / "app.css").read_text(encoding="utf-8")
@@ -90,6 +91,7 @@ def apply_ai_proposal() -> None:
     if proposal.jpy_payable_day is not None:
         st.session_state["jpy_payable_day_input"] = proposal.jpy_payable_day
     st.session_state["ai_apply_notice"] = "확인한 문서 값을 Deal 입력에 반영했습니다."
+    st.session_state["ai_patch_applied"] = True
 
 
 def amount_text(value: str | None) -> str:
@@ -665,6 +667,8 @@ st.dataframe(liquidity_rows, hide_index=True, width="stretch")
 st.subheader("USD/KRW 임계환율")
 st.badge("Calculated result", color="blue")
 st.caption("결정론적 계산 결과이며 환율 예측이 아닙니다.")
+zero_profit_threshold = None
+target_threshold = None
 try:
     zero_profit_threshold = solve_usd_krw_threshold(deal, fx, None)
     target_threshold = solve_usd_krw_threshold(deal, fx, deal.target_margin)
@@ -677,6 +681,7 @@ else:
 
 st.subheader("매출채권 현금화 선택")
 st.badge("Calculated result", color="blue")
+purchase_result = None
 if deal.sale.payment_method is PaymentMethod.TT:
     st.info("EARLY_RECEIVABLE_PURCHASE는 v0.1에서 O/A 매출채권에만 적용됩니다.")
 else:
@@ -741,3 +746,46 @@ else:
             st.write(f"**현금화일**  D+{purchase.purchase_day}")
 
         st.info("판단 포인트: 빠른 유동성 확보와 명시적 매입·할인비용 간의 교환관계입니다.")
+
+st.subheader("거래 금융 사전점검 보고서")
+report_uses_ai = bool(st.session_state.get("ai_patch_applied"))
+official_context_loaded = bool(
+    st.session_state.get("fx_reference_snapshot")
+    or st.session_state.get("ksure_payment_context")
+)
+report_preview = st.columns(3)
+report_preview[0].metric("현재 상태", "목표 충족" if meets_target else "목표 미달")
+report_preview[1].metric(
+    "생성 기준",
+    "AI 확인값 일부 반영" if report_uses_ai else "사용자 입력",
+)
+report_preview[2].metric(
+    "공식 Context",
+    "포함" if official_context_loaded else "불러온 값 없음",
+)
+report_bytes = build_deal_report(
+    DealReportInput(
+        generated_at=datetime.now().astimezone(),
+        deal=deal,
+        fx=fx,
+        base_result=base_result,
+        scenario_results=tuple(scenario_results.items()),
+        zero_profit_threshold=zero_profit_threshold,
+        target_margin_threshold=target_threshold,
+        purchase_result=purchase_result,
+        fx_reference=st.session_state.get("fx_reference_snapshot"),
+        payment_context=st.session_state.get("ksure_payment_context"),
+        ai_analysis_exists=financialization is not None,
+        ai_patch_applied=report_uses_ai,
+        hedge_confirmed=bool(st.session_state.get("ai_hedge_confirmation")),
+    )
+)
+st.download_button(
+    "거래 사전점검 보고서 다운로드",
+    data=report_bytes,
+    file_name="trade-finance-precheck-report.pdf",
+    mime="application/pdf",
+    type="primary",
+    key="deal_report_download",
+)
+st.caption("현재 화면의 결정론적 분석 결과로 즉시 생성되며 서버에 저장되지 않습니다.")
