@@ -977,12 +977,6 @@ Use for country/industry context such as:
 Do not manufacture an AI risk score.
 K-SURE aggregate context is not individual buyer risk prediction.
 
-K-SURE Country Risk
-
-Use as official country-level context.
-
-Do not claim it is individual buyer default probability.
-
 Bank of Korea ECOS
 
 Validated / deferred series:
@@ -995,6 +989,7 @@ actual borrowing rate remains authoritative. No BOK ECOS adapter is implemented.
 
 P1 Deferred
 
+• K-SURE Country Risk context (not validated or implemented)
 • bank-specific receivable purchase rates
 • actual trade-finance fee schedules
 • product-specific insurance premium calculations
