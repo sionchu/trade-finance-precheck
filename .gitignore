@@ -9,8 +9,11 @@ desktop.ini
 *.swp
 *~
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Local environment and secrets
 .env
 .env.*
 !.env.example
-

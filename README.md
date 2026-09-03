@@ -6,9 +6,17 @@ The canonical product definition is [docs/product-spec.md](docs/product-spec.md)
 
 ## Current state
 
-Clean-v0 specification only. Application implementation has not started.
+The deterministic Financial Engine v0.1 implements the canonical one-deal
+economics, dated cashflows, external financing, stress scenarios, USD/KRW
+thresholds, and receivable purchase simulation.
 
 ## Scope
 
-The first implementation gate is the deterministic Financial Engine v0.1 defined in the product specification. Do not begin implementation without an explicit task.
+The implemented scope is limited to the deterministic Financial Engine v0.1
+defined in the product specification.
 
+## Tests
+
+```powershell
+python -m unittest discover -s tests -v
+```
