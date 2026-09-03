@@ -1,0 +1,105 @@
+:root {
+    --color-primary: #1d56c1;
+    --color-surface: #ffffff;
+    --color-surface-subtle: #f4f6f8;
+    --color-text: #17202b;
+    --color-text-muted: #566475;
+    --color-border: #d9e0e8;
+    --radius-sm: 0.5rem;
+    --radius-md: 0.85rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2.25rem;
+}
+
+html,
+body,
+[data-testid="stAppViewContainer"] {
+    font-family: Pretendard, "Pretendard GOV", "Noto Sans KR", "Apple SD Gothic Neo",
+        "Malgun Gothic", Arial, sans-serif;
+    color: var(--color-text);
+}
+
+[data-testid="stAppViewContainer"] {
+    background: var(--color-surface);
+}
+
+[data-testid="stHeader"] {
+    background: rgb(255 255 255 / 92%);
+    border-bottom: 1px solid var(--color-border);
+}
+
+[data-testid="stSidebar"] {
+    background: var(--color-surface-subtle);
+    border-right: 1px solid var(--color-border);
+}
+
+.block-container {
+    max-width: 74rem;
+    padding-top: var(--space-xl);
+    padding-bottom: 4rem;
+}
+
+h1,
+h2,
+h3 {
+    color: var(--color-text);
+    letter-spacing: -0.025em;
+}
+
+h1 {
+    font-weight: 750;
+}
+
+h2,
+h3 {
+    margin-top: var(--space-xl);
+    font-weight: 700;
+}
+
+[data-testid="stMetric"] {
+    padding: var(--space-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.035em;
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--color-text-muted);
+    font-weight: 650;
+}
+
+[data-testid="stAlert"],
+[data-testid="stExpander"],
+[data-testid="stDataFrame"] {
+    border-radius: var(--radius-md);
+}
+
+.stButton > button {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+    border-radius: var(--radius-sm);
+    font-weight: 700;
+    min-height: 2.65rem;
+}
+
+p,
+[data-testid="stCaptionContainer"] {
+    line-height: 1.65;
+}
+
+@media (max-width: 48rem) {
+    .block-container {
+        padding: var(--space-lg) var(--space-md) 3rem;
+    }
+
+    h1 {
+        font-size: 2rem;
+    }
+}

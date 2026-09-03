@@ -29,10 +29,11 @@ class WebMvpTests(unittest.TestCase):
     def test_default_reference_deal_renders_without_exception(self):
         app, _, _ = self.render_without_credentials()
         labels = {metric.label: metric.value for metric in app.metric}
-        self.assertEqual(labels["Gross Deal Margin"], "15.00%")
-        self.assertEqual(labels["Financing-adjusted Deal Margin"], "14.64%")
-        self.assertEqual(labels["Peak Deal Funding Requirement"], "KRW 119.000M")
-        self.assertEqual(labels["Maximum External Borrowing"], "KRW 69.000M")
+        self.assertEqual(app.metric[0].label, "금융비용 반영 Deal Margin")
+        self.assertEqual(app.metric[0].value, "14.64%")
+        self.assertEqual(labels["금융비용 반영 전 Deal Margin"], "15.00%")
+        self.assertEqual(labels["Deal 자금소요"], "KRW 119.000M")
+        self.assertEqual(labels["최대 외부차입"], "KRW 69.000M")
 
     def test_external_apis_are_not_invoked_on_initial_render(self):
         _, eximbank_fetch, ksure_fetch = self.render_without_credentials()
@@ -41,8 +42,8 @@ class WebMvpTests(unittest.TestCase):
 
     def test_missing_credentials_do_not_prevent_deterministic_analysis(self):
         app, _, _ = self.render_without_credentials()
-        self.assertTrue(any(message.value == "MEETS TARGET" for message in app.success))
-        self.assertEqual(len(app.dataframe), 3)
+        self.assertTrue(any("MEETS TARGET" in message.value for message in app.success))
+        self.assertEqual(len(app.dataframe), 2)
 
 
 if __name__ == "__main__":
