@@ -72,7 +72,7 @@ def metric_by_label(app, label):
 
 
 class WebMvpTests(unittest.TestCase):
-    def render_without_credentials(self):
+    def render_without_credentials(self, input_values=None):
         with (
             patch.dict(
                 os.environ,
@@ -89,6 +89,12 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
+            for label, value in (input_values or {}).items():
+                next(
+                    item for item in app.number_input if item.label == label
+                ).set_value(value)
+            if input_values:
+                app.run()
         self.assertEqual(app.exception, [])
         return app, eximbank_fetch, ksure_fetch, openai_extract
 
@@ -120,6 +126,26 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(labels["목표마진 유지선"], "1,386.47원")
         self.assertEqual(labels["거래에 가장 많이 필요한 돈"], "1억 1,900만원")
         self.assertEqual(labels["최대로 빌려야 하는 돈"], "6,900만원")
+
+    def test_canonical_usd_stress_is_below_fourteen_percent_target(self):
+        app, _, _, _ = self.render_without_credentials()
+        message = next(
+            item.value for item in app.error if "달러 -5% Stress" in item.value
+        )
+        self.assertIn("마진 11.20% · 목표 미달", message)
+
+    def test_usd_stress_meets_ten_percent_target(self):
+        app, _, _, _ = self.render_without_credentials({"목표 마진 (%)": 10.0})
+        message = next(
+            item.value for item in app.success if "달러 -5% Stress" in item.value
+        )
+        self.assertIn("마진 11.20% · ✓ 목표 충족", message)
+
+    def test_below_threshold_fx_is_not_described_as_available_buffer(self):
+        app, _, _, _ = self.render_without_credentials({"USD/KRW": 1300.0})
+        visible = "\n".join(item.value for item in app.markdown)
+        self.assertIn("목표마진 유지선보다", visible)
+        self.assertNotIn("현재 여유 -", visible)
 
     def test_decision_first_information_hierarchy(self):
         app, _, _, _ = self.render_without_credentials()

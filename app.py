@@ -333,15 +333,26 @@ with signal_columns[0].container(border=True):
         st.markdown("### 현재 입력에서는 계산 불가")
     else:
         fx_buffer = fx.usd_krw - target_threshold
-        fx_buffer_ratio = fx_buffer / fx.usd_krw
         st.metric("현재 분석 환율", f"{fx.usd_krw:,.0f}원")
         st.metric("목표마진 유지선", f"{target_threshold:,.2f}원")
-        st.write(f"**현재 여유 {fx_buffer:,.2f}원 · {percent(fx_buffer_ratio)}**")
+        if fx_buffer >= 0:
+            fx_buffer_ratio = fx_buffer / fx.usd_krw
+            st.write(f"**현재 여유 {fx_buffer:,.2f}원 · {percent(fx_buffer_ratio)}**")
+        else:
+            st.write(f"**목표마진 유지선보다 {abs(fx_buffer):,.2f}원 낮음**")
     st.caption("환율 전망이 아니라 현재 계약이 목표 마진을 지킬 수 있는 기준점입니다.")
-    st.warning(
-        f"달러 -5% Stress · {fx.usd_krw * Decimal('0.95'):,.0f}원 → "
-        f"마진 {percent(usd_stress_result.financing_adjusted_deal_margin)} · 목표 미달"
+    usd_stress_meets_target = (
+        usd_stress_result.financing_adjusted_deal_margin >= deal.target_margin
     )
+    usd_stress_message = (
+        f"달러 -5% Stress · {fx.usd_krw * Decimal('0.95'):,.0f}원 → "
+        f"마진 {percent(usd_stress_result.financing_adjusted_deal_margin)} · "
+        f"{'✓ 목표 충족' if usd_stress_meets_target else '목표 미달'}"
+    )
+    if usd_stress_meets_target:
+        st.success(usd_stress_message)
+    else:
+        st.error(usd_stress_message)
 
 with signal_columns[1].container(border=True):
     st.markdown("#### 최대로 빌려야 하는 돈")
