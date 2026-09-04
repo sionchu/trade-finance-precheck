@@ -57,10 +57,13 @@ deterministically when loaded, not selected by the model. Numeric evidence
 remains rendered from deterministic application state.
 
 The current authorized gate is **T6 — Final Product Completion / Presentation IA
-RE0 / Report / Submission Freeze**. T6-A is implemented and frozen: its
-company-wide liquidity timeline combines Treasury-confirmed current cash,
+RE0 / Report / Submission Freeze**. T6-A and T6-B are implemented and frozen.
+The company-wide liquidity timeline combines Treasury-confirmed current cash,
 existing confirmed cash-plan events, and the prospective Deal's frozen dated
-cashflows. The next authorized slice is T6-B — React Experience Shell.
+cashflows. The React Experience Shell adds five-stage navigation and a compact
+current-state summary while Python remains authoritative for every financial
+value. The next authorized slice is T6-C — Guided Decision / Agent UX
+Orchestration.
 
 The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
 Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4
@@ -92,6 +95,18 @@ python -m streamlit run app.py
 Optional public K-SURE retrieval uses `KSURE_SERVICE_KEY`. Both document
 financialization roles and the one-shot Deal Review Agent use `OPENAI_API_KEY`.
 The deterministic analysis runs without either variable.
+
+The React component is prebuilt for deployment. To rebuild it locally:
+
+```powershell
+cd components\trade_treasury_experience\frontend
+npm ci
+npm run typecheck
+npm run build
+```
+
+Streamlit Community Cloud serves the committed build assets and does not need
+Node or npm at runtime.
 
 ## Tests
 

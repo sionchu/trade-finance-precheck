@@ -13,6 +13,9 @@ desktop.ini
 __pycache__/
 *.py[cod]
 
+# Frontend dependencies
+node_modules/
+
 # Local environment and secrets
 .env
 .env.*

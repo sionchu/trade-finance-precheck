@@ -22,6 +22,7 @@ FROZEN / IMPLEMENTED:
 • Banker's Usance
 • Single Deal Review Agent with Treasury context
 • T6-A Company Liquidity Timeline
+• T6-B React Experience Shell
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
 • Public Streamlit deployment
@@ -34,7 +35,7 @@ VALIDATED / DEFERRED:
 CURRENT GATE:
 
 • T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze
-• Next authorized slice: T6-B — React Experience Shell
+• Next authorized slice: T6-C — Guided Decision / Agent UX Orchestration
 
 DEFERRED:
 
@@ -1507,8 +1508,8 @@ T6 authorizes:
 • later Agent UX orchestration
 • later report and submission finalization
 
-T1–T5 and T6-A are implemented and frozen. The next authorized slice is T6-B —
-React Experience Shell. No separate T7 is defined.
+T1–T5, T6-A and T6-B are implemented and frozen. The next authorized slice is
+T6-C — Guided Decision / Agent UX Orchestration. No separate T7 is defined.
 
 ────────
 
@@ -1633,4 +1634,33 @@ CSV only and adds no spreadsheet or ERP dependency.
 
 The Single Deal Review Agent and deterministic PDF report remain frozen in
 T6-A. Timeline integration belongs to later T6 slices. T6-A is implemented and
-frozen; the next authorized slice is T6-B — React Experience Shell.
+frozen.
+
+────────
+
+31. T6-B — React Experience Shell
+
+T6-B adds one internal React and TypeScript Streamlit Components v2 shell. It
+establishes exactly five presentation stages: 거래 조건, 회사 유동성, Treasury
+검토, AI 거래 검토, and 결과 / 공유. `active_stage` is persistent component UI
+state; one optional `primary_action` trigger is reserved for experience wiring
+and does not execute AI in this slice.
+
+Python supplies already-formatted authoritative margin, Deal funding, company
+peak gap and credit-adjusted remaining gap. React renders these values but does
+not calculate, round, infer, or mutate finance. Dynamic user, ERP, external and
+AI text enters only through component data and is rendered as React text.
+
+The shell uses one CSS token layer, Lucide icons, restrained Motion state
+transitions, visible keyboard focus and responsive single-column cards. Motion
+respects the user's reduced-motion preference. Production frontend assets are
+precompiled and committed, so the public Python runtime does not require Node
+or npm.
+
+The company cash-plan UI bridge preserves `MANUAL` and `ERP_IMPORT` source
+provenance through editable presentation rows; source is read-only. This does
+not change the frozen Company Liquidity Timeline calculation.
+
+T6-B does not relocate or remove the existing native Streamlit sections. Full
+guided orchestration is the next authorized slice: T6-C — Guided Decision /
+Agent UX Orchestration.

@@ -3,6 +3,7 @@
 ## Authority
 
 - `docs/product-spec.md` is the authoritative product and implementation specification.
+- For UI work, read `/DESIGN.md` and use its semantic tokens and component rules instead of adding arbitrary visual values.
 - Start from the canonical Clean-v0 state. Do not reconstruct brainstorming history, discarded concepts, or superseded drafts.
 - If another document conflicts with `docs/product-spec.md`, follow `docs/product-spec.md`.
 
@@ -15,8 +16,9 @@
 - New application layers must consume frozen components through explicit boundaries. External API access must never move inside Financial Engine calculations.
 - The product is a Company-aware Trade Treasury Pre-check with three connected decision layers: frozen Deal Economics, authorized Company Liquidity, and authorized FX Treasury.
 - AI has exactly three product roles: Trade Document Financialization, Financial Statement Financialization, and the Single Deal Review Agent.
-- The current authorized gate is T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze. T6-A Company Liquidity Timeline is implemented and frozen; the next authorized slice is T6-B React Experience Shell.
-- T6 authorizes the Company Liquidity Timeline, manual company cash-plan input, ERP export-file import, calendar-date company events, prospective Deal overlay, and later React Experience Shell, Agent UX orchestration, report, and submission finalization. Do not start a later T6 slice while T6-A is active.
+- The current authorized gate is T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze. T6-A Company Liquidity Timeline and T6-B React Experience Shell are implemented and frozen; the next authorized slice is T6-C Guided Decision / Agent UX Orchestration.
+- T6 authorizes the Company Liquidity Timeline, manual company cash-plan input, ERP export-file import, calendar-date company events, prospective Deal overlay, React Experience Shell, later Agent UX orchestration, report, and submission finalization. Do not start a later T6 slice while T6-B is active.
+- The T6-B React shell is presentation-only: Python formats authoritative values, `active_stage` is component UI state, production assets are precompiled, and Motion respects reduced-motion preferences. It must not calculate finance or invoke AI.
 - Financial Statement AI extracts only explicitly supported liquidity facts and is frozen. It must not infer credit approval, bank lending capacity, company available cash, a credit score, default, or future cash flow. Deal-specific available company cash always requires explicit user confirmation.
 - Working-capital total limit and used amount are user-entered facts; unused limit is derived. `DealCase.annual_funding_rate` remains the borrowing-rate SSOT, and financial-statement cash never sets Deal-specific available cash.
 - FX Treasury classifies exposure per currency, treats same-currency receivables and payables as an amount-level offset rather than proof of a timing-matched hedge, and uses only user-supplied forward quotes and settlement spots. It forecasts and executes nothing. Its hedge profit/loss overlay does not recompute derivative-settlement funding schedules.

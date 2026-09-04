@@ -235,6 +235,16 @@ class WebMvpTests(unittest.TestCase):
         app, _, _, _ = self.render_without_credentials()
         self.assertEqual(app.title[0].value, "수출거래 사전점검")
 
+    def test_react_experience_shell_mounts_without_external_or_ai_calls(self):
+        app, _, ksure_fetch, openai_extract = self.render_without_credentials()
+        shell = app.get("bidi_component")
+        self.assertEqual(len(shell), 1)
+        self.assertEqual(shell[0].key, "trade_treasury_experience")
+        ksure_fetch.assert_not_called()
+        openai_extract.assert_not_called()
+        self.last_statement_extract.assert_not_called()
+        self.last_deal_review.assert_not_called()
+
     def test_default_reference_deal_renders_without_exception(self):
         app, _, _, _ = self.render_without_credentials()
         labels = {metric.label: metric.value for metric in app.metric}

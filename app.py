@@ -6,6 +6,13 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from components.trade_treasury_experience import (
+    build_experience_data,
+    company_cash_events_from_rows,
+    company_cash_rows,
+    trade_treasury_experience,
+)
+
 from src.ai.deal_review import (
     DealReviewError,
     SupportingSignal,
@@ -51,9 +58,7 @@ from src.finance.engine import (
     solve_usd_krw_threshold,
 )
 from src.finance.company_liquidity import (
-    CompanyCashEvent,
     CompanyCashEventCategory,
-    CompanyCashEventSource,
     CompanyCashEventStatus,
     CompanyLiquidityInput,
     analyze_company_liquidity,
@@ -107,6 +112,7 @@ CANONICAL_COMPANY_CASH_PLAN_ROWS = (
         "구분": "AR_COLLECTION",
         "금액 (KRW)": 40000000.0,
         "상태": "CONFIRMED",
+        "출처": "MANUAL",
         "참조": "기존 매출채권 A",
     },
     {
@@ -114,6 +120,7 @@ CANONICAL_COMPANY_CASH_PLAN_ROWS = (
         "구분": "PAYROLL_TAX",
         "금액 (KRW)": -50000000.0,
         "상태": "CONFIRMED",
+        "출처": "MANUAL",
         "참조": "급여·세금",
     },
     {
@@ -121,6 +128,7 @@ CANONICAL_COMPANY_CASH_PLAN_ROWS = (
         "구분": "AR_COLLECTION",
         "금액 (KRW)": 20000000.0,
         "상태": "CONFIRMED",
+        "출처": "MANUAL",
         "참조": "기존 매출채권 B",
     },
     {
@@ -128,6 +136,7 @@ CANONICAL_COMPANY_CASH_PLAN_ROWS = (
         "구분": "AR_COLLECTION",
         "금액 (KRW)": 30000000.0,
         "상태": "EXPECTED",
+        "출처": "MANUAL",
         "참조": "예상 수금 C",
     },
     {
@@ -135,6 +144,7 @@ CANONICAL_COMPANY_CASH_PLAN_ROWS = (
         "구분": "CAPEX",
         "금액 (KRW)": -30000000.0,
         "상태": "CONFIRMED",
+        "출처": "MANUAL",
         "참조": "확정 설비대금",
     },
 )
@@ -186,40 +196,6 @@ def krw_ten_thousands(value: Decimal) -> str:
 
 def decimal_text(value: Decimal | None, suffix: str = "") -> str:
     return "n/a" if value is None else f"{value}{suffix}"
-
-
-def company_cash_events_from_rows(rows) -> tuple[CompanyCashEvent, ...]:
-    events = []
-    for row in rows:
-        event_date = row.get("예정일")
-        if isinstance(event_date, datetime):
-            event_date = event_date.date()
-        elif isinstance(event_date, str):
-            event_date = date.fromisoformat(event_date)
-        events.append(
-            CompanyCashEvent(
-                event_date=event_date,
-                category=CompanyCashEventCategory(row.get("구분")),
-                amount_krw=decimal_from_widget(row.get("금액 (KRW)")),
-                status=CompanyCashEventStatus(row.get("상태")),
-                source=CompanyCashEventSource.MANUAL,
-                reference=str(row.get("참조", "")),
-            )
-        )
-    return tuple(events)
-
-
-def company_cash_rows(events) -> list[dict]:
-    return [
-        {
-            "예정일": item.event_date,
-            "구분": item.category.value,
-            "금액 (KRW)": float(item.amount_krw),
-            "상태": item.status.value,
-            "참조": item.reference,
-        }
-        for item in events
-    ]
 
 
 def apply_ai_proposal() -> None:
@@ -471,6 +447,8 @@ try:
     target_threshold = solve_usd_krw_threshold(deal, fx, deal.target_margin)
 except ValueError:
     pass
+
+experience_shell_slot = st.empty()
 
 st.subheader("이 거래, 현재 조건에서 버틸까요?")
 meets_target = base_result.financing_adjusted_deal_margin >= deal.target_margin
@@ -1072,6 +1050,7 @@ with manual_tab:
             "상태": st.column_config.SelectboxColumn(
                 "상태", options=[item.value for item in CompanyCashEventStatus]
             ),
+            "출처": st.column_config.TextColumn("출처", disabled=True),
             "참조": st.column_config.TextColumn("참조"),
         },
     )
@@ -1186,6 +1165,39 @@ else:
                 "현재 입력 한도 초과 · 한도 부족 "
                 f"{krw_consumer(company_credit_capacity.liquidity_gap_krw)}"
             )
+
+    margin_status = "success" if meets_target else "danger"
+    remaining_gap_status = (
+        "success" if company_credit_capacity and company_credit_capacity.feasible else "danger"
+    )
+    remaining_gap_value = (
+        company_credit_capacity.liquidity_gap_krw
+        if company_credit_capacity is not None
+        else company_with_deal.peak_liquidity_gap_krw
+    )
+    remaining_gap_detail = (
+        "현재 입력 한도 내"
+        if company_credit_capacity and company_credit_capacity.feasible
+        else f"{krw_consumer(remaining_gap_value)} 부족"
+    )
+    with experience_shell_slot.container():
+        trade_treasury_experience(
+            build_experience_data(
+                margin=percent(base_result.financing_adjusted_deal_margin),
+                margin_detail=("목표 충족" if meets_target else "목표 미달"),
+                margin_status=margin_status,
+                deal_funding=krw_consumer(
+                    base_result.funding.maximum_external_borrowing_krw
+                ),
+                company_peak_gap=krw_consumer(company_with_deal.peak_liquidity_gap_krw),
+                company_peak_detail=(
+                    f"Peak {company_with_deal.peak_liquidity_gap_date.isoformat()}"
+                ),
+                remaining_gap=krw_consumer(remaining_gap_value),
+                remaining_gap_detail=remaining_gap_detail,
+                remaining_gap_status=remaining_gap_status,
+            )
+        )
     st.caption(
         "Deal-level 배정자금과 Company-wide 현금 포지션은 서로 다른 입력입니다. "
         "재무제표상 현금도 현재 가용현금을 자동 설정하지 않습니다."
