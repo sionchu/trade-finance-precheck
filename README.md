@@ -11,7 +11,7 @@ Financial Engine v0.1, Deal Rescue / Negotiation Solver, Company Liquidity &
 Funding Choice, Forward Hedge Simulation, Banker's Usance simulation, Streamlit Web MVP and
 presentation layer, Trade Document Financialization, Financial Statement
 Financialization with a normalized Company Liquidity Profile, the bounded
-read-only Single Deal Review Agent, public K-SURE aggregate payment context, and
+read-only Single Deal Review Agent with current T1–T4 Treasury evidence, public K-SURE aggregate payment context, and
 the Deal Pre-check Report. The public Streamlit deployment is operational.
 Financial calculations remain authoritative in the Financial Engine and Deal
 Rescue Solver; AI only extracts supported facts or explains already-computed
@@ -45,8 +45,15 @@ the separate Usance principal obligation and explicit rate/fee assumptions.
 It does not predict approval, execute financing, hedge FX automatically, or
 implement a full L/C / UPAS workflow.
 
-The current authorized gate is **T5 — Treasury integration into the Single
-Deal Review Agent**.
+The Single Deal Review Agent reads current evidence through exactly four local
+read-only tools: current Deal analysis, Stress / Rescue, already-computed
+Treasury context, and already-loaded K-SURE context. It uses exactly two model
+requests, performs no authoritative calculation or external fetch, and treats
+Treasury context as part of result freshness. Numeric evidence remains rendered
+from deterministic application state.
+
+The current authorized gate is **T6 — Presentation IA RE0 / Report / Submission
+Final Freeze**.
 
 The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
 Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4

@@ -1,4 +1,5 @@
 import os
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -13,6 +14,7 @@ from src.ai.deal_review import (
     DealReviewRun,
     ReviewSignal,
     TOOL_NAMES,
+    TreasuryReviewContext,
 )
 from src.ai.financialization import (
     DocumentFinancialization,
@@ -25,10 +27,15 @@ from src.ai.financialization import (
 from src.ai.financial_statement import (
     FinancialStatementFinancialization,
     StatementFact,
+    build_company_liquidity_profile,
 )
-from src.domain.deal_case import reference_deal, reference_fx
+from src.domain.deal_case import Currency, FxRates, reference_deal, reference_fx
 from src.external.ksure_payment import PaymentContext
+from src.finance.engine import Scenario, canonical_purchase_option, canonical_scenarios, evaluate_deal
+from src.finance.fx_treasury import ForwardHedgeInput, analyze_fx_treasury
+from src.finance.liquidity import WorkingCapitalCreditLine, analyze_company_funding
 from src.finance.rescue import RescueLever
+from src.finance.usance import BankersUsanceInput, analyze_bankers_usance
 
 
 def extracted_demo(**overrides):
@@ -112,16 +119,53 @@ def metric_by_label(app, label):
     return next(metric for metric in app.metric if metric.label == label)
 
 
-def review_result(payment_context=None):
+def current_treasury_context(company_liquidity=None):
+    deal = reference_deal()
+    fx = reference_fx()
+    base = evaluate_deal(deal, fx)
+    scenarios = canonical_scenarios(deal, fx)
+    line = WorkingCapitalCreditLine(Decimal("100000000"), Decimal("30000000"))
+    purchase = evaluate_deal(deal, fx, purchase_option=canonical_purchase_option())
+    funding = analyze_company_funding(
+        deal=deal,
+        base_result=base,
+        combined_result=scenarios[Scenario.COMBINED],
+        credit_line=line,
+        purchase_result=purchase,
+    )
+    fx_treasury = analyze_fx_treasury(
+        deal=deal,
+        current_fx=fx,
+        settlement_fx=FxRates(Decimal("1330"), Decimal("990")),
+        hedge_inputs=(
+            ForwardHedgeInput(Currency.USD, Decimal("0.8"), Decimal("1395")),
+            ForwardHedgeInput(Currency.JPY, Decimal("0.8"), Decimal("905")),
+        ),
+    )
+    usance = analyze_bankers_usance(
+        deal=deal,
+        fx=fx,
+        base_result=base,
+        credit_line=line,
+        usance_input=BankersUsanceInput(1, 90, Decimal("0.048"), Decimal("0.0015")),
+    )
+    return TreasuryReviewContext(company_liquidity, funding, fx_treasury, usance)
+
+
+def review_result(payment_context=None, treasury_context=None):
     return DealReviewRun(
-        question="이 거래의 주요 취약점과 목표마진을 지키기 위해 검토할 조건을 설명해줘.",
+        question=(
+            "이 거래의 수익성, 회사 자금여력, 외화노출과 자금조달 구조에서 "
+            "우선 확인할 점을 설명해줘."
+        ),
         memo=DealReviewMemo(
             headline="복합 상황에서 계약조건 점검이 필요합니다",
             summary="가격과 원가 경계를 함께 읽고 자금 부담의 원인을 확인해야 합니다.",
             key_signals=(
                 ReviewSignal.COMBINED_STRESS,
-                ReviewSignal.SALE_PRICE_BOUNDARY,
-                ReviewSignal.FUNDING_BURDEN,
+                ReviewSignal.CREDIT_LINE_CAPACITY,
+                ReviewSignal.FORWARD_HEDGE,
+                ReviewSignal.BANKERS_USANCE,
             ),
             negotiation_focus=(
                 RescueLever.SALE_AMOUNT_USD,
@@ -131,6 +175,7 @@ def review_result(payment_context=None):
         ),
         deal=reference_deal(),
         fx=reference_fx(),
+        treasury_context=treasury_context or current_treasury_context(),
         payment_context=payment_context,
         used_tools=TOOL_NAMES,
         model="gpt-5.6-luna",
@@ -230,13 +275,13 @@ class WebMvpTests(unittest.TestCase):
             "회사 자금상태",
             "조건이 나빠지면 어떻게 될까요?",
             "이 거래를 목표 수준으로 만들려면?",
-            "AI 거래 검토 에이전트",
             "회사 자금으로 대금 회수일까지 버틸 수 있을까요?",
             "부족한 돈은 어떻게 메울까요?",
             "수입대금 지급을 은행 신용으로 늦춰보면?",
             "외화는 어느 방향으로 위험할까요?",
             "환율을 열어둘까, 일부 고정할까?",
             "공식 시장 참고정보",
+            "AI 거래 검토 에이전트",
             "분석 근거",
             "결과를 공유해야 하나요?",
         ]
@@ -438,7 +483,9 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(labels["단기차입금"], "1억 6,000만원")
         self.assertEqual(labels["영업활동현금흐름"], "8,500만원")
         self.assertEqual(labels["현재 거래 입력상 회사 투입가능자금"], "5,000만원")
-        visible = "\n".join(item.value for item in (*app.markdown, *app.info))
+        visible = "\n".join(
+            item.value for item in (*app.markdown, *app.info, *app.caption)
+        )
         self.assertIn("재무제표상 현금 ≠ 이 거래에 투입 가능한 자금", visible)
         self.assertNotIn("이익잉여금", visible)
         self.assertEqual(
@@ -482,7 +529,11 @@ class WebMvpTests(unittest.TestCase):
         self.assertIn("최소 USD 106,017", visible)
         self.assertIn("현재 거래 분석", visible)
         self.assertIn("Stress / 조건 역산", visible)
+        self.assertIn("회사 자금 / 자금조달 / 외화위험", visible)
         self.assertIn("K-SURE Context 확인 · 불러온 공식 데이터 없음", visible)
+        self.assertIn("복합 Stress: 필요 7,030만원", visible)
+        self.assertIn("overlay 13.82%", visible)
+        self.assertIn("은행 신용 원금 피크 6,900만원", visible)
 
     def test_changed_deal_marks_agent_result_stale_without_another_call(self):
         with (
@@ -527,6 +578,91 @@ class WebMvpTests(unittest.TestCase):
         visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
         self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
         self.assertNotIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
+
+    def test_each_treasury_input_stales_and_exact_restore_recovers_without_ai_call(self):
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.button, "run_deal_review").click()
+            app.run()
+            changes = (
+                ("credit_total_limit_input", 101000000.0, 100000000.0),
+                ("receivable_purchase_day_input", 66, 65),
+                ("usd_hedge_ratio_input", 75.0, 80.0),
+                ("settlement_usd_krw_input", 1329.0, 1330.0),
+                ("usance_repayment_day_input", 91, 90),
+            )
+            for key, changed, original in changes:
+                widget = element_by_key(app.number_input, key)
+                widget.set_value(changed)
+                app.run()
+                stale = "\n".join(
+                    item.value for item in (*app.markdown, *app.warning)
+                )
+                self.assertIn(
+                    "기존 AI 검토는 현재 상태와 일치하지 않습니다", stale
+                )
+
+                widget = element_by_key(app.number_input, key)
+                widget.set_value(original)
+                app.run()
+                current = "\n".join(
+                    item.value for item in (*app.markdown, *app.warning)
+                )
+                self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", current)
+                self.assertNotIn(
+                    "기존 AI 검토는 현재 상태와 일치하지 않습니다", current
+                )
+
+        review.assert_called_once()
+
+    def test_company_liquidity_signal_renders_only_from_loaded_statement_profile(self):
+        profile = build_company_liquidity_profile(extracted_statement())
+        loaded_run = review_result(
+            treasury_context=current_treasury_context(profile)
+        )
+        loaded_run = replace(
+            loaded_run,
+            memo=DealReviewMemo(
+                headline="회사 자금 맥락을 함께 확인합니다",
+                summary="재무제표상 현금과 거래 배정자금의 차이를 구분해 봐야 합니다.",
+                key_signals=(
+                    ReviewSignal.COMPANY_LIQUIDITY,
+                    ReviewSignal.CREDIT_LINE_CAPACITY,
+                ),
+                negotiation_focus=(),
+                payment_context_note=None,
+            ),
+        )
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch(
+                "src.ai.financial_statement.analyze_demo_financial_statement",
+                return_value=extracted_statement(),
+            ) as statement_ai,
+            patch("src.ai.deal_review.run_deal_review", return_value=loaded_run) as review,
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.button, "analyze_financial_statement").click()
+            app.run()
+            element_by_key(app.button, "run_deal_review").click()
+            app.run()
+
+        statement_ai.assert_called_once()
+        review.assert_called_once()
+        visible = "\n".join(
+            item.value for item in (*app.markdown, *app.info, *app.caption)
+        )
+        self.assertIn("재무제표상 현금 및 현금성자산", visible)
+        self.assertIn("재무제표상 현금은 Deal 투입가능자금과 동일하지 않습니다", visible)
 
     def test_loaded_ksure_context_is_available_without_agent_or_ksure_fetch(self):
         context = PaymentContext(

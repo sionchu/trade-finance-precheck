@@ -20,7 +20,7 @@ FROZEN / IMPLEMENTED:
 • Company Liquidity & Funding Choice
 • FX Treasury / Forward Hedge Simulation
 • Banker's Usance
-• Single Deal Review Agent
+• Single Deal Review Agent with Treasury context
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
 • Public Streamlit deployment
@@ -32,7 +32,7 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• T5 — Treasury integration into Single Deal Review Agent
+• T6 — Presentation IA RE0 / Report / Submission Final Freeze
 
 DEFERRED:
 
@@ -1121,15 +1121,20 @@ Explain:
 • why payment delay increased funding cost
 • liquidity/cost tradeoff of receivable purchase
 
-The Single Deal Review Agent consumes only the current Deal state,
-already-computed Financial Engine and Deal Rescue outputs, and optional
-already-loaded K-SURE aggregate context. It produces a concise grounded review
-memo through exactly three local read-only evidence tools and never fetches
-external data, calculates authoritative financial values, mutates the Deal,
-executes finance, or stores conversation history.
+The Single Deal Review Agent consumes only current Deal state, already-computed
+Financial Engine, Deal Rescue, Company Liquidity, Funding Choice, FX Treasury
+and Banker's Usance outputs, plus optional already-loaded K-SURE aggregate
+context. It produces a concise grounded review memo through exactly four local
+read-only evidence tools: current Deal analysis, Stress / Rescue, Treasury
+context, and K-SURE context. The Treasury tool only serializes supplied T1–T4
+results; it performs no calculation or external fetch.
 
-This role is implemented and frozen. T5 may integrate already-computed Treasury
-context while preserving the same read-only, bounded, non-calculating boundary.
+A successful run uses exactly two model requests. The Agent never fetches
+external data, calculates authoritative financial values, mutates the Deal,
+executes finance, or stores conversation history. Its immutable current-state
+snapshot includes Treasury context, so a Treasury input or result change makes
+an older memo stale and restoring the exact state makes it current again.
+This role and its Treasury integration are implemented and frozen.
 
 AI-generated prose does not restate authoritative numeric values. The Web MVP
 renders selected signals and negotiation topics from current deterministic
@@ -1481,8 +1486,8 @@ funding schedule with derivative settlement cash flows.
 5. T5 — Treasury integration into Single Deal Review Agent
 6. T6 — Presentation IA RE0 / Report / Submission Final Freeze
 
-The current authorized gate is T5. Later gates are defined boundaries, not
-authorization to implement them early.
+The current authorized gate is T6. Earlier Treasury gates are implemented and
+frozen.
 
 ────────
 

@@ -10,17 +10,28 @@ from src.ai.deal_review import (
     DealReviewMemo,
     ReviewSignal,
     TOOL_NAMES,
+    TreasuryReviewContext,
     _current_deal_payload,
     _payment_context_payload,
     _stress_rescue_payload,
+    _treasury_context_payload,
     is_current_deal_review,
     run_deal_review,
 )
 from src.ai.financialization import MODEL
-from src.domain.deal_case import reference_deal, reference_fx
+from src.ai.financial_statement import CompanyLiquidityProfile
+from src.domain.deal_case import Currency, FxRates, reference_deal, reference_fx
 from src.external.ksure_payment import PaymentContext, PaymentShare
-from src.finance.engine import Scenario, canonical_scenarios, evaluate_deal
+from src.finance.engine import (
+    Scenario,
+    canonical_purchase_option,
+    canonical_scenarios,
+    evaluate_deal,
+)
+from src.finance.fx_treasury import ForwardHedgeInput, analyze_fx_treasury
+from src.finance.liquidity import WorkingCapitalCreditLine, analyze_company_funding
 from src.finance.rescue import RescueLever, analyze_deal_rescue
+from src.finance.usance import BankersUsanceInput, analyze_bankers_usance
 
 
 def payment_context(year=2025):
@@ -37,6 +48,54 @@ def payment_context(year=2025):
             PaymentShare("P3", "61-90 days", Decimal("44"), 49),
         ),
     )
+
+
+def canonical_treasury(deal=None, fx=None, *, include_profile=True):
+    deal = deal or reference_deal()
+    fx = fx or reference_fx()
+    base = evaluate_deal(deal, fx)
+    scenarios = canonical_scenarios(deal, fx)
+    line = WorkingCapitalCreditLine(Decimal("100000000"), Decimal("30000000"))
+    purchase = evaluate_deal(deal, fx, purchase_option=canonical_purchase_option())
+    funding = analyze_company_funding(
+        deal=deal,
+        base_result=base,
+        combined_result=scenarios[Scenario.COMBINED],
+        credit_line=line,
+        purchase_result=purchase,
+    )
+    fx_treasury = analyze_fx_treasury(
+        deal=deal,
+        current_fx=fx,
+        settlement_fx=FxRates(Decimal("1330"), Decimal("990")),
+        hedge_inputs=(
+            ForwardHedgeInput(Currency.USD, Decimal("0.8"), Decimal("1395")),
+            ForwardHedgeInput(Currency.JPY, Decimal("0.8"), Decimal("905")),
+        ),
+    )
+    usance = analyze_bankers_usance(
+        deal=deal,
+        fx=fx,
+        base_result=base,
+        credit_line=line,
+        usance_input=BankersUsanceInput(1, 90, Decimal("0.048"), Decimal("0.0015")),
+    )
+    profile = (
+        CompanyLiquidityProfile(
+            Decimal("120000000"),
+            Decimal("30000000"),
+            Decimal("240000000"),
+            Decimal("180000000"),
+            Decimal("650000000"),
+            Decimal("470000000"),
+            Decimal("160000000"),
+            Decimal("12000000"),
+            Decimal("85000000"),
+        )
+        if include_profile
+        else None
+    )
+    return TreasuryReviewContext(profile, funding, fx_treasury, usance)
 
 
 def calls(names=TOOL_NAMES):
@@ -103,8 +162,15 @@ class DealReviewTests(unittest.TestCase):
         self.base = evaluate_deal(self.deal, self.fx)
         self.scenarios = tuple(canonical_scenarios(self.deal, self.fx).items())
         self.rescue = analyze_deal_rescue(self.deal, self.fx)
+        self.treasury = canonical_treasury(self.deal, self.fx)
 
-    def invoke(self, client=None, context=None, question="거래를 검토해줘"):
+    def invoke(
+        self,
+        client=None,
+        payment=None,
+        question="거래를 검토해줘",
+        treasury=None,
+    ):
         return run_deal_review(
             question,
             deal=self.deal,
@@ -114,7 +180,8 @@ class DealReviewTests(unittest.TestCase):
             zero_profit_threshold=Decimal("1143.35"),
             target_margin_threshold=Decimal("1386.47"),
             rescue_analysis=self.rescue,
-            payment_context=context,
+            treasury_context=self.treasury if treasury is None else treasury,
+            payment_context=payment,
             client=client or FakeClient(),
         )
 
@@ -135,6 +202,48 @@ class DealReviewTests(unittest.TestCase):
         self.assertTrue(payload["rescue"]["needs_rescue"])
         self.assertEqual(len(payload["rescue"]["options"]), 5)
 
+    def test_treasury_context_is_frozen_and_payload_is_deterministic(self):
+        with self.assertRaises(Exception):
+            self.treasury.company_funding = None
+        first = _treasury_context_payload(self.treasury, self.deal)
+        second = _treasury_context_payload(self.treasury, self.deal)
+        self.assertEqual(first, second)
+
+    def test_treasury_payload_exposes_canonical_evidence_and_boundaries(self):
+        payload = _treasury_context_payload(self.treasury, self.deal)
+        company = payload["company_liquidity"]
+        self.assertEqual(company["cash_and_cash_equivalents_krw"], "120000000")
+        self.assertEqual(company["deal_available_cash_krw"], "50000000")
+        funding = payload["company_funding"]
+        self.assertEqual(
+            funding["base_capacity"]["required_external_funding_krw"], "69000000"
+        )
+        self.assertEqual(funding["base_capacity"]["credit_headroom_krw"], "1000000")
+        self.assertEqual(funding["combined_capacity"]["liquidity_gap_krw"], "300000.00")
+        self.assertEqual(len(funding["choices"]), 3)
+        fx_payload = payload["fx_treasury"]
+        positions = {item["currency"]: item for item in fx_payload["positions"]}
+        self.assertEqual(positions["USD"]["net_exposure"], "80000")
+        self.assertEqual(positions["USD"]["amount_level_offset"], "20000")
+        self.assertEqual(positions["JPY"]["net_exposure"], "-3000000")
+        self.assertEqual(
+            fx_payload["settlement_scenario_total_hedge_effect_krw"], "6200000.000"
+        )
+        self.assertEqual(
+            fx_payload["settlement_hedge_overlay_margin"],
+            str(self.treasury.fx_treasury.settlement_scenario_overlay.simulated_margin_after_hedge),
+        )
+        usance = payload["bankers_usance"]
+        self.assertEqual(usance["base_ordinary_working_capital_peak_krw"], "69000000")
+        self.assertEqual(usance["usance_ordinary_working_capital_peak_krw"], "42000000")
+        self.assertEqual(usance["peak_combined_bank_principal_krw"], "69000000")
+        self.assertEqual(usance["financing_cost_difference_krw"], "40500.0000000000000000000000")
+
+    def test_absent_treasury_subsections_are_loaded_false(self):
+        empty = TreasuryReviewContext(None, None, None, None)
+        payload = _treasury_context_payload(empty, self.deal)
+        self.assertTrue(all(value == {"loaded": False} for value in payload.values()))
+
     def test_payment_tool_returns_loaded_false_when_absent(self):
         self.assertEqual(_payment_context_payload(None), {"loaded": False})
 
@@ -145,13 +254,16 @@ class DealReviewTests(unittest.TestCase):
         self.assertIn("개별 바이어", payload["semantic_warning"])
         self.assertEqual(payload["payment_terms"][0]["observation_count"], 80)
 
-    def test_first_request_receives_exactly_three_local_tools(self):
+    def test_first_request_receives_exactly_four_strict_local_tools(self):
         client = FakeClient()
         self.invoke(client)
         request = client.responses.create_calls[0]
         self.assertEqual(tuple(tool["name"] for tool in request["tools"]), TOOL_NAMES)
         self.assertEqual(request["tool_choice"], "required")
         self.assertTrue(all(tool["strict"] for tool in request["tools"]))
+        self.assertTrue(
+            all(tool["parameters"]["additionalProperties"] is False for tool in request["tools"])
+        )
 
     def test_reasoning_item_is_preserved_but_never_executed_as_a_tool(self):
         tool_calls = [SimpleNamespace(type="reasoning"), *calls()]
@@ -176,6 +288,7 @@ class DealReviewTests(unittest.TestCase):
                     zero_profit_threshold=None,
                     target_margin_threshold=None,
                     rescue_analysis=self.rescue,
+                    treasury_context=self.treasury,
                     payment_context=None,
                 )
 
@@ -245,6 +358,25 @@ class DealReviewTests(unittest.TestCase):
         with self.assertRaises(DealReviewError):
             self.invoke(client)
 
+    def test_unavailable_treasury_signals_are_rejected(self):
+        cases = (
+            (TreasuryReviewContext(None, self.treasury.company_funding, self.treasury.fx_treasury, self.treasury.bankers_usance), ReviewSignal.COMPANY_LIQUIDITY),
+            (TreasuryReviewContext(self.treasury.company_liquidity, None, self.treasury.fx_treasury, self.treasury.bankers_usance), ReviewSignal.CREDIT_LINE_CAPACITY),
+            (TreasuryReviewContext(self.treasury.company_liquidity, None, self.treasury.fx_treasury, self.treasury.bankers_usance), ReviewSignal.FUNDING_OPTIONS),
+            (TreasuryReviewContext(self.treasury.company_liquidity, self.treasury.company_funding, None, self.treasury.bankers_usance), ReviewSignal.FX_EXPOSURE),
+            (TreasuryReviewContext(self.treasury.company_liquidity, self.treasury.company_funding, None, self.treasury.bankers_usance), ReviewSignal.FORWARD_HEDGE),
+            (TreasuryReviewContext(self.treasury.company_liquidity, self.treasury.company_funding, self.treasury.fx_treasury, None), ReviewSignal.BANKERS_USANCE),
+        )
+        for treasury, signal in cases:
+            with self.subTest(signal=signal):
+                client = FakeClient(
+                    final_memo=memo(
+                        key_signals=(ReviewSignal.COMBINED_STRESS, signal)
+                    )
+                )
+                with self.assertRaises(DealReviewError):
+                    self.invoke(client, treasury=treasury)
+
     def test_input_state_is_not_mutated(self):
         original = (self.deal, self.fx, self.rescue)
         self.invoke(FakeClient())
@@ -256,7 +388,12 @@ class DealReviewTests(unittest.TestCase):
         for _ in range(2):
             self.assertTrue(
                 is_current_deal_review(
-                    existing, existing.question, self.deal, self.fx, None
+                    existing,
+                    existing.question,
+                    self.deal,
+                    self.fx,
+                    self.treasury,
+                    None,
                 )
             )
         self.assertEqual(len(client.responses.create_calls), 1)
@@ -265,37 +402,146 @@ class DealReviewTests(unittest.TestCase):
     def test_freshness_is_current_for_equal_state(self):
         result = self.invoke(FakeClient())
         self.assertTrue(
-            is_current_deal_review(result, result.question, self.deal, self.fx, None)
+            is_current_deal_review(
+                result, result.question, self.deal, self.fx, self.treasury, None
+            )
         )
 
     def test_changing_deal_makes_run_stale(self):
         result = self.invoke(FakeClient())
         changed = replace(self.deal, target_margin=Decimal("0.12"))
         self.assertFalse(
-            is_current_deal_review(result, result.question, changed, self.fx, None)
+            is_current_deal_review(
+                result, result.question, changed, self.fx, self.treasury, None
+            )
         )
 
     def test_changing_fx_makes_run_stale(self):
         result = self.invoke(FakeClient())
         changed = replace(self.fx, usd_krw=Decimal("1399"))
         self.assertFalse(
-            is_current_deal_review(result, result.question, self.deal, changed, None)
+            is_current_deal_review(
+                result, result.question, self.deal, changed, self.treasury, None
+            )
         )
 
     def test_changing_payment_context_makes_run_stale(self):
         context = payment_context()
-        result = self.invoke(FakeClient(), context=context)
+        result = self.invoke(FakeClient(), payment=context)
         changed = payment_context(year=2024)
         self.assertFalse(
             is_current_deal_review(
-                result, result.question, self.deal, self.fx, changed
+                result, result.question, self.deal, self.fx, self.treasury, changed
             )
         )
 
     def test_changing_question_makes_run_stale(self):
         result = self.invoke(FakeClient())
         self.assertFalse(
-            is_current_deal_review(result, "다른 질문", self.deal, self.fx, None)
+            is_current_deal_review(
+                result, "다른 질문", self.deal, self.fx, self.treasury, None
+            )
+        )
+
+    def test_changing_or_restoring_treasury_context_controls_freshness(self):
+        result = self.invoke(FakeClient())
+        changed = TreasuryReviewContext(
+            None,
+            self.treasury.company_funding,
+            self.treasury.fx_treasury,
+            self.treasury.bankers_usance,
+        )
+        self.assertFalse(
+            is_current_deal_review(
+                result, result.question, self.deal, self.fx, changed, None
+            )
+        )
+        self.assertTrue(
+            is_current_deal_review(
+                result,
+                result.question,
+                self.deal,
+                self.fx,
+                canonical_treasury(self.deal, self.fx),
+                None,
+            )
+        )
+
+    def test_each_treasury_dimension_participates_in_freshness(self):
+        result = self.invoke(FakeClient())
+        funding = self.treasury.company_funding
+        fx_treasury = self.treasury.fx_treasury
+        usance = self.treasury.bankers_usance
+        self.assertIsNotNone(funding)
+        self.assertIsNotNone(fx_treasury)
+        self.assertIsNotNone(usance)
+
+        changed_line = replace(
+            funding,
+            credit_line=WorkingCapitalCreditLine(
+                Decimal("100000001"), Decimal("30000000")
+            ),
+        )
+        changed_purchase = replace(
+            funding,
+            choices=tuple(
+                replace(choice, cash_inflow_day=66)
+                if choice.choice.value == "EARLY_RECEIVABLE_PURCHASE"
+                else choice
+                for choice in funding.choices
+            ),
+        )
+        changed_forward = replace(
+            fx_treasury,
+            settlement_scenario_hedges=(
+                replace(
+                    fx_treasury.settlement_scenario_hedges[0],
+                    forward_rate_quote=Decimal("1396"),
+                ),
+                fx_treasury.settlement_scenario_hedges[1],
+            ),
+        )
+        changed_settlement = replace(
+            fx_treasury,
+            settlement_scenario_overlay=replace(
+                fx_treasury.settlement_scenario_overlay,
+                unhedged_margin=Decimal("0.1"),
+            ),
+        )
+        changed_usance = replace(
+            usance,
+            usance=replace(usance.usance, company_repayment_day=91),
+        )
+        variants = (
+            replace(self.treasury, company_funding=changed_line),
+            replace(self.treasury, company_funding=changed_purchase),
+            replace(self.treasury, fx_treasury=changed_forward),
+            replace(self.treasury, fx_treasury=changed_settlement),
+            replace(self.treasury, bankers_usance=changed_usance),
+            replace(self.treasury, company_liquidity=None),
+        )
+        for changed in variants:
+            with self.subTest(changed=changed):
+                self.assertFalse(
+                    is_current_deal_review(
+                        result,
+                        result.question,
+                        self.deal,
+                        self.fx,
+                        changed,
+                        None,
+                    )
+                )
+
+        self.assertTrue(
+            is_current_deal_review(
+                result,
+                result.question,
+                self.deal,
+                self.fx,
+                self.treasury,
+                None,
+            )
         )
 
     def test_usage_is_aggregated_only_from_both_requests(self):
@@ -312,7 +558,7 @@ class DealReviewTests(unittest.TestCase):
         self.assertEqual(outputs[0]["content"], "거래를 검토해줘")
         self.assertEqual(
             sum(isinstance(item, dict) and item.get("type") == "function_call_output" for item in outputs),
-            3,
+            4,
         )
 
 
