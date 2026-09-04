@@ -15,7 +15,8 @@ FROZEN / IMPLEMENTED:
 • Deal Rescue / Negotiation Solver
 • Deterministic End-to-End Web MVP
 • Accepted KRDS/Toss-inspired presentation layer
-• AI Financialization
+• Trade Document Financialization
+• Financial Statement Financialization / Company Liquidity Profile
 • Single Deal Review Agent
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
@@ -28,7 +29,7 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• T1 — Financial Statement AI / Company Liquidity Profile
+• T2 — Company Liquidity & Funding Choice
 
 DEFERRED:
 
@@ -1105,7 +1106,7 @@ capacity, Deal-specific available cash, a credit score, default, or future cash
 flow.
 
 The final value for “이번 거래에 실제 투입 가능한 회사자금” remains an
-explicit user-confirmed Deal input. T1 is the current authorized gate.
+explicit user-confirmed Deal input. This role is implemented and frozen.
 
 16.3 Single Deal Review Agent
 
@@ -1327,7 +1328,8 @@ Web MVP caller
     ├──→ Financial Engine v0.1
     ├──→ Deal Rescue Solver
     ├──→ K-SURE payment context
-    ├──→ AI Financialization → reviewed proposed Deal-input patch
+    ├──→ Trade Document Financialization → reviewed proposed Deal-input patch
+    ├──→ Financial Statement Financialization → Company Liquidity Profile
     └──→ Single Deal Review Agent → grounded explanation of current evidence
 
 Deployment-deferred technical asset
@@ -1339,7 +1341,7 @@ MVP does not expose Korea Eximbank retrieval.
 
 ────────
 
-24. Company Liquidity Profile — T1
+24. Frozen Gate — Financial Statement AI / Company Liquidity Profile
 
 Financial Statement Financialization extracts only the explicit facts listed in
 section 16.2 into a user-reviewable company-liquidity profile. It does not
@@ -1350,7 +1352,19 @@ The Deal-specific value “이번 거래에 실제 투입 가능한 회사자금
 explicit user-confirmed input. Retained earnings is never treated as cash or
 available liquidity.
 
-T1 is the current authorized implementation gate.
+The implemented T1 vertical slice uses one bundled synthetic KRW financial
+statement, one explicit user action and one stored-disabled Responses API call.
+It normalizes the nine supported facts without calculating ratios, working
+capital, lending capacity, creditworthiness, or Deal available cash. Individual
+fields that need review do not hide other clean facts.
+
+The bundled statement includes retained earnings as a safety case, but neither
+the extraction schema nor `CompanyLiquidityProfile` contains a retained-earnings
+or Deal-available-cash field. The current Deal input remains unchanged.
+
+Future source strategy may use structured OpenDART data for a public/disclosing
+company or document AI for a private/non-disclosing SME. No OpenDART adapter,
+API key, company-code search or XBRL parser is implemented in T1.
 
 ────────
 
@@ -1436,7 +1450,7 @@ universally better.
 5. T5 — Treasury integration into Single Deal Review Agent
 6. T6 — Presentation IA RE0 / Report / Submission Final Freeze
 
-The current authorized gate is T1. Later gates are defined boundaries, not
+The current authorized gate is T2. Later gates are defined boundaries, not
 authorization to implement them early.
 
 ────────

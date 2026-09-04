@@ -22,6 +22,10 @@ from src.ai.financialization import (
     Receivable,
     TimingAnchor,
 )
+from src.ai.financial_statement import (
+    FinancialStatementFinancialization,
+    StatementFact,
+)
 from src.domain.deal_case import reference_deal, reference_fx
 from src.external.ksure_payment import PaymentContext
 from src.finance.rescue import RescueLever
@@ -75,6 +79,31 @@ def extracted_demo(**overrides):
     return DocumentFinancialization(**values)
 
 
+def statement_fact(amount):
+    return StatementFact(
+        amount_krw=amount,
+        period_end="2025-12-31",
+        source_filename="Company_Financial_Statement.pdf",
+        evidence="2025-12-31 current period",
+        needs_review=False,
+    )
+
+
+def extracted_statement():
+    return FinancialStatementFinancialization(
+        cash_and_cash_equivalents=statement_fact("120,000,000"),
+        short_term_financial_instruments=statement_fact("30,000,000"),
+        accounts_receivable=statement_fact("240,000,000"),
+        inventory=statement_fact("180,000,000"),
+        current_assets=statement_fact("650,000,000"),
+        current_liabilities=statement_fact("470,000,000"),
+        short_term_borrowings=statement_fact("160,000,000"),
+        finance_cost=statement_fact("12,000,000"),
+        operating_cash_flow=statement_fact("85,000,000"),
+        review_notes=(),
+    )
+
+
 def element_by_key(elements, key):
     return next(element for element in elements if element.key == key)
 
@@ -125,6 +154,9 @@ class WebMvpTests(unittest.TestCase):
             patch("src.external.eximbank_fx.fetch_fx_reference") as eximbank_fetch,
             patch("src.external.ksure_payment.fetch_payment_context") as ksure_fetch,
             patch("src.ai.financialization.analyze_demo_documents") as openai_extract,
+            patch(
+                "src.ai.financial_statement.analyze_demo_financial_statement"
+            ) as statement_extract,
             patch("src.ai.deal_review.run_deal_review") as deal_review,
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
@@ -136,6 +168,7 @@ class WebMvpTests(unittest.TestCase):
             if input_values:
                 app.run()
         self.last_deal_review = deal_review
+        self.last_statement_extract = statement_extract
         self.assertEqual(app.exception, [])
         return app, eximbank_fetch, ksure_fetch, openai_extract
 
@@ -194,6 +227,7 @@ class WebMvpTests(unittest.TestCase):
         expected_order = [
             "이 거래, 현재 조건에서 버틸까요?",
             "거래서류로 자동 입력하기",
+            "회사 자금상태",
             "조건이 나빠지면 어떻게 될까요?",
             "이 거래를 목표 수준으로 만들려면?",
             "AI 거래 검토 에이전트",
@@ -248,7 +282,54 @@ class WebMvpTests(unittest.TestCase):
         eximbank_fetch.assert_not_called()
         ksure_fetch.assert_not_called()
         openai_extract.assert_not_called()
+        self.last_statement_extract.assert_not_called()
         self.last_deal_review.assert_not_called()
+
+    def test_financial_statement_section_is_bounded_and_explicit(self):
+        app, _, _, _ = self.render_without_credentials()
+        self.assertIn("회사 자금상태", [item.value for item in app.subheader])
+        self.assertIn("샘플 재무제표 읽기", [item.label for item in app.button])
+        visible = "\n".join(item.value for item in (*app.markdown, *app.caption))
+        self.assertIn("가상 재무제표 · 실제 기업 자료 아님", visible)
+        self.last_statement_extract.assert_not_called()
+
+    def test_explicit_statement_cta_renders_normalized_profile_without_changing_deal_cash(self):
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch(
+                "src.ai.financial_statement.analyze_demo_financial_statement",
+                return_value=extracted_statement(),
+            ) as statement_extract,
+            patch("src.ai.financialization.analyze_demo_documents"),
+            patch("src.ai.deal_review.run_deal_review"),
+            patch("src.external.ksure_payment.fetch_payment_context"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.button, "analyze_financial_statement").click()
+            app.run()
+            app.run()
+        self.assertEqual(app.exception, [])
+        statement_extract.assert_called_once()
+        labels = {metric.label: metric.value for metric in app.metric}
+        self.assertEqual(labels["현금 및 현금성자산"], "1억 2,000만원")
+        self.assertEqual(labels["단기금융상품"], "3,000만원")
+        self.assertEqual(labels["유동자산"], "6억 5,000만원")
+        self.assertEqual(labels["유동부채"], "4억 7,000만원")
+        self.assertEqual(labels["단기차입금"], "1억 6,000만원")
+        self.assertEqual(labels["영업활동현금흐름"], "8,500만원")
+        self.assertEqual(labels["현재 거래 입력상 회사 투입가능자금"], "5,000만원")
+        visible = "\n".join(item.value for item in (*app.markdown, *app.info))
+        self.assertIn("재무제표상 현금 ≠ 이 거래에 투입 가능한 자금", visible)
+        self.assertNotIn("이익잉여금", visible)
+        self.assertEqual(
+            next(
+                item
+                for item in app.number_input
+                if item.label == "이번 거래에 투입 가능한 회사자금 (KRW)"
+            ).value,
+            50000000.0,
+        )
 
     def test_agent_is_visible_and_normal_rerun_does_not_call_it(self):
         app, _, _, _ = self.render_without_credentials()

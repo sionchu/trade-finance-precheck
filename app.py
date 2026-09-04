@@ -23,6 +23,11 @@ from src.ai.financialization import (
     normalize_amount,
     unsupported_currencies,
 )
+from src.ai.financial_statement import (
+    FinancialStatementError,
+    analyze_demo_financial_statement,
+    build_company_liquidity_profile,
+)
 from src.domain.deal_case import (
     Currency,
     DealCase,
@@ -63,6 +68,9 @@ DEMO_PDF_PATHS = (
     Path(__file__).parent / "assets" / "demo" / "Supplier_PO_US.pdf",
     Path(__file__).parent / "assets" / "demo" / "Supplier_PO_JP.pdf",
 )
+COMPANY_STATEMENT_PDF = (
+    Path(__file__).parent / "assets" / "demo" / "Company_Financial_Statement.pdf"
+)
 
 
 def decimal_from_widget(value: int | float) -> Decimal:
@@ -87,6 +95,14 @@ def krw_consumer(value: Decimal) -> str:
             else f"{billions:,}억원"
         )
     return f"{ten_thousands:,}만원"
+
+
+def optional_krw_consumer(value: Decimal | None) -> str:
+    if value is None:
+        return "확인 필요"
+    if value < 0:
+        return f"-{krw_consumer(abs(value))}"
+    return krw_consumer(value)
 
 
 def decimal_text(value: Decimal | None, suffix: str = "") -> str:
@@ -263,7 +279,7 @@ with st.sidebar.expander("비용 및 지급", expanded=False):
 
 with st.sidebar.expander("자금 / 목표", expanded=True):
     available_cash = st.number_input(
-        "사내 가용자금 (KRW)",
+        "이번 거래에 투입 가능한 회사자금 (KRW)",
         min_value=0.0,
         value=float(reference.available_cash_krw),
         step=1000000.0,
@@ -607,6 +623,92 @@ if financialization is not None:
         )
     if notice := st.session_state.pop("ai_apply_notice", None):
         st.success(notice)
+
+st.subheader("회사 자금상태")
+st.badge("재무제표 AI 인식", color="violet")
+st.write(
+    "재무제표에서 단기 유동성과 관련된 항목을 읽습니다. "
+    "재무제표상 현금과 실제로 이 거래에 투입할 수 있는 자금은 다를 수 있습니다."
+)
+st.caption("가상 재무제표 · 실제 기업 자료 아님")
+with st.expander("샘플 재무제표 보기"):
+    st.download_button(
+        "PDF 보기 / 다운로드",
+        data=COMPANY_STATEMENT_PDF.read_bytes(),
+        file_name=COMPANY_STATEMENT_PDF.name,
+        mime="application/pdf",
+        key="download_company_statement",
+    )
+
+statement_analysis = st.session_state.get("financial_statement_analysis")
+if st.button("샘플 재무제표 읽기", type="primary", key="analyze_financial_statement"):
+    if not os.environ.get("OPENAI_API_KEY"):
+        st.session_state["financial_statement_error"] = (
+            "OPENAI_API_KEY가 없어 재무제표를 읽을 수 없습니다."
+        )
+    else:
+        with st.spinner("재무제표에서 회사 자금상태를 읽고 있습니다..."):
+            try:
+                statement_analysis = analyze_demo_financial_statement(
+                    COMPANY_STATEMENT_PDF
+                )
+            except FinancialStatementError:
+                st.session_state["financial_statement_error"] = (
+                    "재무제표 분석을 완료하지 못했습니다."
+                )
+            else:
+                st.session_state["financial_statement_analysis"] = statement_analysis
+                st.session_state.pop("financial_statement_error", None)
+
+if statement_error := st.session_state.get("financial_statement_error"):
+    st.warning(statement_error)
+
+if statement_analysis is not None:
+    try:
+        liquidity_profile = build_company_liquidity_profile(statement_analysis)
+    except ValueError:
+        st.error("재무제표 금액 형식을 확인해야 합니다.")
+    else:
+        st.markdown("### 재무제표상 단기 유동성 항목")
+        primary_profile = (
+            ("현금 및 현금성자산", liquidity_profile.cash_and_cash_equivalents_krw),
+            ("단기금융상품", liquidity_profile.short_term_financial_instruments_krw),
+            ("유동자산", liquidity_profile.current_assets_krw),
+            ("유동부채", liquidity_profile.current_liabilities_krw),
+            ("단기차입금", liquidity_profile.short_term_borrowings_krw),
+            ("영업활동현금흐름", liquidity_profile.operating_cash_flow_krw),
+        )
+        profile_columns = st.columns(3)
+        for index, (label, value) in enumerate(primary_profile):
+            profile_columns[index % 3].metric(label, optional_krw_consumer(value))
+
+        with st.expander("기타 유동성 항목"):
+            secondary_profile = st.columns(3)
+            secondary_profile[0].metric(
+                "매출채권", optional_krw_consumer(liquidity_profile.accounts_receivable_krw)
+            )
+            secondary_profile[1].metric(
+                "재고자산", optional_krw_consumer(liquidity_profile.inventory_krw)
+            )
+            secondary_profile[2].metric(
+                "금융비용", optional_krw_consumer(liquidity_profile.finance_cost_krw)
+            )
+
+        st.markdown("### 재무제표상 현금 ≠ 이 거래에 투입 가능한 자금")
+        cash_boundary = st.columns(2)
+        cash_boundary[0].metric(
+            "재무제표상 현금 및 현금성자산",
+            optional_krw_consumer(liquidity_profile.cash_and_cash_equivalents_krw),
+        )
+        cash_boundary[1].metric(
+            "현재 거래 입력상 회사 투입가능자금",
+            krw_consumer(deal.available_cash_krw),
+        )
+        st.info(
+            "현재 거래 투입가능자금은 재무제표에서 자동 산정하지 않습니다. "
+            "회사가 실제로 이 거래에 배정할 수 있는 금액을 사용자가 직접 확인합니다."
+        )
+
 st.subheader("조건이 나빠지면 어떻게 될까요?")
 st.badge("Stress 가정 · 미래 예측 아님", color="orange")
 scenario_rows = []
