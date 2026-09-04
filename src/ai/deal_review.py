@@ -53,6 +53,18 @@ class ReviewSignal(str, Enum):
     KSURE_PAYMENT_CONTEXT = "KSURE_PAYMENT_CONTEXT"
 
 
+TREASURY_REVIEW_SIGNALS = frozenset(
+    {
+        ReviewSignal.COMPANY_LIQUIDITY,
+        ReviewSignal.CREDIT_LINE_CAPACITY,
+        ReviewSignal.FUNDING_OPTIONS,
+        ReviewSignal.FX_EXPOSURE,
+        ReviewSignal.FORWARD_HEDGE,
+        ReviewSignal.BANKERS_USANCE,
+    }
+)
+
+
 class DealReviewMemo(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -66,7 +78,15 @@ class DealReviewMemo(BaseModel):
         max_length=500,
         description="숫자 문자를 전혀 포함하지 않는 간결한 한국어 설명",
     )
-    key_signals: tuple[ReviewSignal, ...] = Field(min_length=2, max_length=4)
+    key_signals: tuple[ReviewSignal, ...] = Field(
+        min_length=2,
+        max_length=4,
+        description=(
+            "검토 근거 신호. Treasury Context 하위 항목이 하나라도 로드되면 사용 가능한 "
+            "COMPANY_LIQUIDITY, CREDIT_LINE_CAPACITY, FUNDING_OPTIONS, FX_EXPOSURE, "
+            "FORWARD_HEDGE, BANKERS_USANCE 중 적어도 하나를 반드시 포함"
+        ),
+    )
     negotiation_focus: tuple[RescueLever, ...] = Field(max_length=3)
     payment_context_note: str | None = Field(
         description=(
@@ -125,7 +145,7 @@ Banker's Usance는 자금조달 시뮬레이션이지 결제방식, 완전한 L/
 승인과 한도는 알 수 없고, 일반 운전자금 감소가 총 은행채무 소멸을 뜻하지 않으며 FX를
 자동 헤지하지도 않습니다. Usance 사용을 추천하지 마세요.
 제공된 Treasury Context에 loaded=true인 항목이 하나 이상이면 사용할 수 있는 Treasury
-ReviewSignal을 key_signals에 적어도 하나 포함하세요.
+ReviewSignal을 key_signals에 적어도 하나 포함하세요. 이 조건은 필수입니다.
 headline, summary, payment_context_note에는 아라비아 숫자를 포함한 어떤 숫자
 문자도 쓰지 마세요. K-SURE Context가 로드되지 않았다면 payment_context_note는 반드시
 null이고 KSURE_PAYMENT_CONTEXT 신호를 선택하지 마세요.
@@ -546,6 +566,23 @@ def _aggregate_usage(first: Any, second: Any) -> DealReviewUsage | None:
     return DealReviewUsage(*(left + right for left, right in zip(first_usage, second_usage)))
 
 
+def _available_treasury_signals(
+    treasury_context: TreasuryReviewContext,
+) -> frozenset[ReviewSignal]:
+    available = set()
+    if treasury_context.company_liquidity is not None:
+        available.add(ReviewSignal.COMPANY_LIQUIDITY)
+    if treasury_context.company_funding is not None:
+        available.update(
+            (ReviewSignal.CREDIT_LINE_CAPACITY, ReviewSignal.FUNDING_OPTIONS)
+        )
+    if treasury_context.fx_treasury is not None:
+        available.update((ReviewSignal.FX_EXPOSURE, ReviewSignal.FORWARD_HEDGE))
+    if treasury_context.bankers_usance is not None:
+        available.add(ReviewSignal.BANKERS_USANCE)
+    return frozenset(available)
+
+
 def _validate_memo(
     memo: DealReviewMemo,
     treasury_context: TreasuryReviewContext,
@@ -559,20 +596,11 @@ def _validate_memo(
         or ReviewSignal.KSURE_PAYMENT_CONTEXT in memo.key_signals
     ):
         raise DealReviewError(SAFE_ERROR)
-    unavailable_signals = set()
-    if treasury_context.company_liquidity is None:
-        unavailable_signals.add(ReviewSignal.COMPANY_LIQUIDITY)
-    if treasury_context.company_funding is None:
-        unavailable_signals.update(
-            (ReviewSignal.CREDIT_LINE_CAPACITY, ReviewSignal.FUNDING_OPTIONS)
-        )
-    if treasury_context.fx_treasury is None:
-        unavailable_signals.update(
-            (ReviewSignal.FX_EXPOSURE, ReviewSignal.FORWARD_HEDGE)
-        )
-    if treasury_context.bankers_usance is None:
-        unavailable_signals.add(ReviewSignal.BANKERS_USANCE)
-    if unavailable_signals.intersection(memo.key_signals):
+    available_treasury_signals = _available_treasury_signals(treasury_context)
+    selected_treasury_signals = set(memo.key_signals) & TREASURY_REVIEW_SIGNALS
+    if available_treasury_signals and not selected_treasury_signals:
+        raise DealReviewError(SAFE_ERROR)
+    if selected_treasury_signals - available_treasury_signals:
         raise DealReviewError(SAFE_ERROR)
 
 

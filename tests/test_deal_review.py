@@ -116,13 +116,22 @@ def memo(**overrides):
         "summary": "가격과 원가 경계를 함께 읽고 자금 부담의 원인을 확인해야 합니다.",
         "key_signals": (
             ReviewSignal.COMBINED_STRESS,
-            ReviewSignal.SALE_PRICE_BOUNDARY,
+            ReviewSignal.CREDIT_LINE_CAPACITY,
         ),
         "negotiation_focus": (RescueLever.SALE_AMOUNT_USD,),
         "payment_context_note": None,
     }
     values.update(overrides)
     return DealReviewMemo(**values)
+
+
+def legacy_only_memo():
+    return memo(
+        key_signals=(
+            ReviewSignal.COMBINED_STRESS,
+            ReviewSignal.SALE_PRICE_BOUNDARY,
+        )
+    )
 
 
 class FakeResponses:
@@ -376,6 +385,37 @@ class DealReviewTests(unittest.TestCase):
                 )
                 with self.assertRaises(DealReviewError):
                     self.invoke(client, treasury=treasury)
+
+    def test_fully_loaded_treasury_requires_a_treasury_signal(self):
+        with self.assertRaises(DealReviewError):
+            self.invoke(FakeClient(final_memo=legacy_only_memo()))
+
+    def test_partially_loaded_treasury_requires_a_treasury_signal(self):
+        partial = TreasuryReviewContext(
+            None, self.treasury.company_funding, None, None
+        )
+        with self.assertRaises(DealReviewError):
+            self.invoke(
+                FakeClient(final_memo=legacy_only_memo()), treasury=partial
+            )
+
+    def test_fully_loaded_treasury_accepts_an_available_signal(self):
+        result = self.invoke(FakeClient())
+        self.assertIn(ReviewSignal.CREDIT_LINE_CAPACITY, result.memo.key_signals)
+
+    def test_partially_loaded_treasury_accepts_a_matching_signal(self):
+        partial = TreasuryReviewContext(
+            None, self.treasury.company_funding, None, None
+        )
+        result = self.invoke(FakeClient(), treasury=partial)
+        self.assertIn(ReviewSignal.CREDIT_LINE_CAPACITY, result.memo.key_signals)
+
+    def test_empty_treasury_accepts_legacy_only_signals(self):
+        empty = TreasuryReviewContext(None, None, None, None)
+        result = self.invoke(
+            FakeClient(final_memo=legacy_only_memo()), treasury=empty
+        )
+        self.assertEqual(result.memo.key_signals, legacy_only_memo().key_signals)
 
     def test_input_state_is_not_mutated(self):
         original = (self.deal, self.fx, self.rescue)

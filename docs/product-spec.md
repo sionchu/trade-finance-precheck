@@ -1135,6 +1135,8 @@ executes finance, or stores conversation history. Its immutable current-state
 snapshot includes Treasury context, so a Treasury input or result change makes
 an older memo stale and restoring the exact state makes it current again.
 This role and its Treasury integration are implemented and frozen.
+When Treasury evidence is available, post-parse validation requires a successful
+memo to select at least one available Treasury ReviewSignal.
 
 AI-generated prose does not restate authoritative numeric values. The Web MVP
 renders selected signals and negotiation topics from current deterministic
