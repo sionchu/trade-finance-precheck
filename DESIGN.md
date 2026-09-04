@@ -64,3 +64,9 @@ The canonical React tokens live in `components/trade_treasury_experience/fronten
 ## Guided decision loop
 
 The five-stage experience follows condition → choice → review → result → response. `review_goal` records user intent and `response_action` records the next comparison the user chose; neither is an AI recommendation or financial input. Tool completion is shown only from a completed Agent run, never from timers or simulated progress.
+
+## Final product freeze
+
+- Native evidence is stage-exclusive: each stage shows only its detailed inputs, evidence, or result actions while the React shell remains visible.
+- The shell uses neutral unavailable values and Python-supplied `complete`, `ready`, or `blocked` states when an input is invalid; it never disappears or infers readiness.
+- The result stage is the single report/download entry. The deterministic PDF uses the final Treasury brand and includes only current application evidence; stale AI prose is excluded.

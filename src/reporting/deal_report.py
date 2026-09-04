@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -21,10 +22,18 @@ from reportlab.platypus import (
 )
 
 from src.ai.financialization import ProposedDealPatch
+from src.ai.deal_review import DealReviewMemo, SupportingSignal, TreasuryFocus
 from src.domain.deal_case import Currency, DealCase, PaymentMethod
 from src.external.eximbank_fx import FxReferenceSnapshot
 from src.external.ksure_payment import PaymentContext
 from src.finance.engine import DealResult, Scenario
+from src.finance.company_liquidity import (
+    CompanyDealLiquidityComparison,
+    CompanyLiquidityCreditCapacity,
+)
+from src.finance.fx_treasury import FxTreasuryAnalysis
+from src.finance.liquidity import CompanyFundingAnalysis, FundingChoice
+from src.finance.usance import BankersUsanceComparison
 
 
 FONT_NAME = "HYGothic-Medium"
@@ -90,11 +99,11 @@ def official_context_text(
     payment_context: PaymentContext | None,
 ) -> str:
     if fx_reference is not None and payment_context is not None:
-        return "한국수출입은행 환율 / K-SURE 결제 Context"
+        return "한국수출입은행 환율 / K-SURE 결제 참고정보"
     if fx_reference is not None:
-        return "한국수출입은행 환율 Context"
+        return "한국수출입은행 환율 참고정보"
     if payment_context is not None:
-        return "K-SURE 결제 Context"
+        return "K-SURE 결제 참고정보"
     return "이 세션에 불러온 공식 데이터 없음"
 
 
@@ -112,6 +121,17 @@ class DealReportInput:
     ai_analysis_exists: bool = False
     ai_provenance_status: AiProvenanceStatus = AiProvenanceStatus.NOT_APPLIED
     hedge_confirmed: bool = False
+    company_liquidity_timeline: CompanyDealLiquidityComparison | None = None
+    company_liquidity_capacity: CompanyLiquidityCreditCapacity | None = None
+    treasury_confirmed_current_cash_krw: Decimal | None = None
+    minimum_operating_cash_krw: Decimal | None = None
+    company_funding: CompanyFundingAnalysis | None = None
+    fx_treasury: FxTreasuryAnalysis | None = None
+    bankers_usance: BankersUsanceComparison | None = None
+    company_liquidity_includes_expected: bool = False
+    review_memo: DealReviewMemo | None = None
+    review_used_tools: tuple[str, ...] = ()
+    review_is_current: bool = False
 
 
 def _krw_millions(value: Decimal) -> str:
@@ -216,7 +236,7 @@ def _scenario_label(scenario: Scenario) -> str:
         Scenario.JPY_UP_10: "엔화 가치 +10%",
         Scenario.RATE_UP_1PP: "조달금리 +1%p",
         Scenario.DELAY_30D: "고객 입금 +30일 지연",
-        Scenario.COMBINED: "복합 Stress",
+        Scenario.COMBINED: "복합 악화 시나리오",
     }[scenario]
 
 
@@ -224,29 +244,30 @@ def _footer(canvas, document) -> None:
     canvas.saveState()
     canvas.setFont(FONT_NAME, 7)
     canvas.setFillColor(MUTED)
-    canvas.drawString(18 * mm, 10 * mm, "AI Trade Finance Pre-check / 분석용 사전점검")
+    canvas.drawString(18 * mm, 10 * mm, "기업 수출거래 Treasury 사전점검")
     canvas.drawRightString(192 * mm, 10 * mm, f"{document.page}")
     canvas.restoreState()
 
 
 def build_deal_report(report: DealReportInput) -> bytes:
-    """Render already-computed deterministic analysis as an in-memory PDF."""
+    """Render supplied, already-computed current evidence as an in-memory PDF."""
     pdfmetrics.registerFont(UnicodeCIDFont(FONT_NAME))
     styles = _styles()
     buffer = BytesIO()
     document = SimpleDocTemplate(
         buffer, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm,
         topMargin=14 * mm, bottomMargin=16 * mm,
-        title="거래 금융 사전점검 보고서", author="AI Trade Finance Pre-check",
+        title="기업 수출거래 Treasury 사전점검 보고서",
+        author="Company-aware Trade Treasury Pre-check",
     )
-    story = []
+    story: list = []
     basis = report_basis_text(
         report.ai_provenance_status,
         report.ai_analysis_exists,
     )
     story.extend([
-        _p("AI Trade Finance Pre-check", styles["subtitle"]),
-        _p("거래 금융 사전점검 보고서", styles["title"]),
+        _p("Company-aware Trade Treasury Pre-check", styles["subtitle"]),
+        _p("기업 수출거래 Treasury 사전점검 보고서", styles["title"]),
         _p(
             f"생성시각 {report.generated_at.strftime('%Y-%m-%d %H:%M %Z')} / "
             "분석용 사전점검 / 은행 승인 / 금융 실행 / 신용평가 아님",
@@ -277,7 +298,7 @@ def build_deal_report(report: DealReportInput) -> bytes:
     ]))
     story.extend([
         Spacer(1, 4 * mm), decision,
-        _p("1. 핵심 자금 지표", styles["section"]),
+        _p("1. 거래 사전점검 요약", styles["section"]),
     ])
     peak_point = max(
         report.base_result.funding.points,
@@ -288,7 +309,7 @@ def build_deal_report(report: DealReportInput) -> bytes:
         ("최대 외부차입", _krw_millions(report.base_result.funding.maximum_external_borrowing_krw)),
         ("외부 금융비용", _krw_millions(report.base_result.funding.external_funding_cost_krw)),
     ], styles))
-    story.append(_p(f"자금 부담이 가장 큰 시점: D+{peak_point.day} / 목표 마진 {_percent(report.deal.target_margin)}", styles["small"]))
+    story.append(_p(f"거래 자금 부담이 가장 큰 시점: D+{peak_point.day} / 목표 마진 {_percent(report.deal.target_margin)}", styles["small"]))
 
     receivable = f"{report.deal.sale.currency.value} {_amount(report.deal.sale.amount)}"
     payable_lines = "<br/>".join(
@@ -300,13 +321,60 @@ def build_deal_report(report: DealReportInput) -> bytes:
         note = "달러 가치가 떨어지면 불리" if currency is Currency.USD and exposure > 0 else "엔화 가치가 오르면 불리" if currency is Currency.JPY and exposure < 0 else "방향별 영향 확인"
         exposure_lines.append(f"{currency.value} {exposure:+,.0f} / {note}")
     story.extend([
-        _p("2. 돈의 흐름과 환노출", styles["section"]),
+        _p("2. Deal economics", styles["section"]),
         _table([
             ["받을 돈", "낼 돈", "환율에 노출된 금액"],
             [_p(receivable, styles["body"]), _p(payable_lines, styles["body"]), _p("<br/>".join(exposure_lines), styles["body"])],
         ], [48 * mm, 55 * mm, 75 * mm]),
-        _p("3. Stress 요약", styles["section"]),
-        _p("아래 값은 Stress 가정이며 환율·입금 시점에 대한 예측이 아닙니다.", styles["small"]),
+        _p("아래 거래 현금은 회사 전체 현금잔액이 아니라 기존 Deal 엔진의 거래별 배정자금입니다.", styles["small"]),
+        _p("3. Company-wide liquidity", styles["section"]),
+    ])
+    if report.company_liquidity_timeline is None or report.company_liquidity_capacity is None:
+        story.append(_p("현재 조건 기준 회사 전체 유동성 요약 없음", styles["body"]))
+    else:
+        comparison = report.company_liquidity_timeline
+        timeline = comparison.company_with_deal
+        without = comparison.company_without_deal
+        capacity = report.company_liquidity_capacity
+        peak_point_company = next(
+            point for point in timeline.points
+            if point.event_date == timeline.peak_liquidity_gap_date
+        )
+        mode = (
+            "EXPECTED 포함 사용자 선택 시나리오"
+            if report.company_liquidity_includes_expected
+            else "CONFIRMED 기준"
+        )
+        story.extend([
+            _p(mode, styles["small"]),
+            _table([
+                ["현재 가용현금", "최소 운영자금", "거래만 본 필요 은행자금"],
+                [
+                    _krw_millions(report.treasury_confirmed_current_cash_krw)
+                    if report.treasury_confirmed_current_cash_krw is not None else "입력 없음",
+                    _krw_millions(report.minimum_operating_cash_krw)
+                    if report.minimum_operating_cash_krw is not None else "입력 없음",
+                    _krw_millions(report.base_result.funding.maximum_external_borrowing_krw),
+                ],
+                ["회사 자체 Peak 부족", "Deal 포함 Peak 부족", "기존 한도 적용 후 부족"],
+                [
+                    _krw_millions(without.peak_liquidity_gap_krw),
+                    _krw_millions(timeline.peak_liquidity_gap_krw),
+                    _krw_millions(capacity.liquidity_gap_krw),
+                ],
+            ], [59 * mm, 59 * mm, 60 * mm]),
+            _p(
+                f"Peak {timeline.peak_liquidity_gap_date.isoformat()} / D+{peak_point_company.day_offset} · "
+                f"미사용 운전자금 한도 {_krw_millions(capacity.unused_credit_limit_krw)} · "
+                f"종료 예상현금 {_krw_millions(timeline.ending_projected_cash_krw)}",
+                styles["small"],
+            ),
+            _p("Deal-level allocated cash != Company-wide current cash position", styles["small"]),
+        ])
+
+    story.extend([
+        _p("4. 복합 악화 시나리오 / 목표마진 충족 조건", styles["section"]),
+        _p("아래 값은 사용자·제품 Stress 가정이며 환율·입금 시점에 대한 예측이 아닙니다.", styles["small"]),
     ])
     scenario_rows = [["상황", "금융비용 반영 마진", "목표 상태", "최대 외부차입"]]
     for scenario, result in report.scenario_results:
@@ -318,8 +386,7 @@ def build_deal_report(report: DealReportInput) -> bytes:
         ])
     story.extend([
         _table(scenario_rows, [53 * mm, 45 * mm, 30 * mm, 50 * mm], highlight_last=True),
-        PageBreak(),
-        _p("4. USD/KRW 계산 기준점", styles["section"]),
+        _p("USD/KRW 계산 기준점", styles["section"]),
     ])
     missing_threshold = "현재 입력조건에서는 계산 가능한 범위에서 기준점을 찾지 못했습니다."
     story.append(_table([
@@ -331,7 +398,22 @@ def build_deal_report(report: DealReportInput) -> bytes:
     ], [89 * mm, 89 * mm]))
     story.append(_p("계산 기준점이며 환율 전망이 아닙니다.", styles["small"]))
 
-    story.append(_p("5. 매출채권 현금화 비교", styles["section"]))
+    story.extend([PageBreak(), _p("5. Funding / receivable purchase / Banker's Usance", styles["section"])])
+    if report.company_funding is not None:
+        funding = report.company_funding
+        choice_labels = {
+            FundingChoice.INTERNAL_CASH_ONLY: "회사자금만",
+            FundingChoice.WAIT_WITH_CREDIT_LINE: "기존 운전자금 한도",
+            FundingChoice.EARLY_RECEIVABLE_PURCHASE: "매출채권 조기현금화",
+        }
+        rows = [["자금조달 비교", "상태", "최대 은행 필요액", "총 금융비용"]]
+        for choice in funding.choices:
+            rows.append([
+                choice_labels[choice.choice], choice.status.value,
+                _krw_millions(choice.required_external_funding_krw),
+                "산정 없음" if choice.total_financing_cost_krw is None else _krw_millions(choice.total_financing_cost_krw),
+            ])
+        story.append(_table(rows, [43 * mm, 32 * mm, 50 * mm, 53 * mm]))
     if report.deal.sale.payment_method is PaymentMethod.TT:
         story.append(_p("TT 거래의 조기 매출채권 현금화 비교는 v0.1 범위 밖입니다.", styles["body"]))
     elif report.purchase_result is None or report.purchase_result.receivable_purchase is None:
@@ -349,7 +431,85 @@ def build_deal_report(report: DealReportInput) -> bytes:
         ], [40 * mm, 69 * mm, 69 * mm]))
         story.append(_p("먼저 현금화하면 자금을 더 일찍 확보할 수 있지만 할인비용과 수수료가 추가됩니다.", styles["small"]))
 
-    story.append(_p("6. 공식 시장 Context", styles["section"]))
+    if report.bankers_usance is not None:
+        comparison = report.bankers_usance
+        usance = comparison.usance
+        story.extend([
+            _p("Banker's Usance", styles["section"]),
+            _table([
+                ["공급자 지급 / 회사 상환", "일반 운전자금 Peak", "은행 신용 원금 Peak", "금융비용 차이"],
+                [
+                    f"D+{usance.supplier_payment_day} / D+{usance.company_repayment_day}",
+                    f"{_krw_millions(comparison.base_working_capital_credit_krw)} -> {_krw_millions(usance.peak_working_capital_credit_krw)}",
+                    _krw_millions(usance.peak_combined_bank_principal_krw),
+                    _krw_millions(comparison.financing_cost_difference_krw),
+                ],
+            ], [43 * mm, 52 * mm, 45 * mm, 38 * mm]),
+            _p("일반 운전자금 사용 감소는 총 은행 원금채무가 사라진다는 뜻이 아니며, 승인·실행을 판단하지 않습니다.", styles["small"]),
+        ])
+
+    story.append(_p("6. FX Treasury", styles["section"]))
+    if report.fx_treasury is None:
+        story.append(_p("현재 조건 기준 FX Treasury 요약 없음", styles["body"]))
+    else:
+        position_rows = [["통화", "수취", "지급", "금액 기준 상계", "순노출 / 불리한 방향"]]
+        for position in report.fx_treasury.positions:
+            position_rows.append([
+                position.currency.value,
+                _amount(position.receivable_amount),
+                _amount(position.payable_amount),
+                _amount(position.amount_offset),
+                f"{position.net_exposure:+,.0f} / {position.unfavorable_direction.value}",
+            ])
+        overlay = report.fx_treasury.settlement_scenario_overlay
+        story.extend([
+            _table(position_rows, [22 * mm, 34 * mm, 34 * mm, 40 * mm, 48 * mm]),
+            _p(
+                f"사용자 입력 정산환율 시나리오: 헤지효과 {_krw_millions(overlay.hedge_effect_krw)} / "
+                f"미헤지 마진 {_percent(overlay.unhedged_margin)} / overlay 마진 {_percent(overlay.simulated_margin_after_hedge)}",
+                styles["body"],
+            ),
+            _p("선물환 quote와 정산환율은 사용자 선택 가정입니다. 환율예측·헤지 권고가 아니며, 금액 기준 상계는 시점 일치 헤지를 뜻하지 않습니다.", styles["small"]),
+        ])
+
+    story.append(_p("7. 거래 검토 요약", styles["section"]))
+    if report.review_is_current and report.review_memo is not None:
+        focus_labels = {
+            TreasuryFocus.CREDIT_LINE_CAPACITY: "운전자금 한도 수용력",
+            TreasuryFocus.FUNDING_OPTIONS: "자금조달 비교",
+            TreasuryFocus.FX_EXPOSURE: "통화별 외화노출",
+            TreasuryFocus.FORWARD_HEDGE: "선물환 시뮬레이션",
+            TreasuryFocus.BANKERS_USANCE: "Banker's Usance",
+        }
+        signal_labels = {
+            SupportingSignal.CURRENT_MARGIN: "현재 마진",
+            SupportingSignal.FX_RESILIENCE: "환율 회복력",
+            SupportingSignal.FUNDING_BURDEN: "자금 부담",
+            SupportingSignal.COMBINED_STRESS: "복합 악화 시나리오",
+            SupportingSignal.SALE_PRICE_BOUNDARY: "수출가격 경계",
+            SupportingSignal.USD_COST_BOUNDARY: "USD 원가 경계",
+            SupportingSignal.JPY_COST_BOUNDARY: "JPY 원가 경계",
+            SupportingSignal.COLLECTION_DAY_BOUNDARY: "회수일 경계",
+            SupportingSignal.FUNDING_RATE_BOUNDARY: "조달금리 경계",
+        }
+        tool_labels = {
+            "read_current_deal_analysis": "현재 거래 분석",
+            "read_stress_and_rescue": "Stress / 목표마진 충족 조건",
+            "read_treasury_context": "회사 자금 / 자금조달 / 외화위험",
+            "read_payment_context": "K-SURE 결제 참고정보 확인",
+        }
+        memo = report.review_memo
+        story.extend([
+            _p(escape(memo.headline), styles["body"]),
+            _p(escape(memo.summary), styles["body"]),
+            _p(f"우선 검토 주제: {focus_labels[memo.treasury_focus]}", styles["small"]),
+            _p("함께 본 근거: " + ", ".join(signal_labels[item] for item in memo.supporting_signals), styles["small"]),
+            _p("사용한 분석 도구: " + ", ".join(tool_labels.get(item, item) for item in report.review_used_tools), styles["small"]),
+        ])
+    else:
+        story.append(_p("현재 조건 기준 거래 검토 요약 없음", styles["body"]))
+
+    story.append(_p("8. 공식 데이터 / 출처 / 제한", styles["section"]))
     context_rows = []
     if report.fx_reference is not None:
         context_rows.append([
@@ -363,14 +523,14 @@ def build_deal_report(report: DealReportInput) -> bytes:
         late = "n/a" if context.late_payment_rate_percent is None else f"{context.late_payment_rate_percent}%"
         delay = "n/a" if context.average_late_payment_period_days is None else f"{context.average_late_payment_period_days}일"
         context_rows.append([
-            "K-SURE",
+            "K-SURE 결제 참고정보",
             f"기준년도 {context.reference_year} / 평균 결제기간 {avg} / 지연결제율 {late} / 평균 지연기간 {delay}<br/>국가/산업 집계 Context",
             "Observed official aggregate data",
         ])
     if context_rows:
         story.append(_table([["출처", "관측값", "구분"]] + context_rows, [33 * mm, 105 * mm, 40 * mm]))
     else:
-        story.append(_p("공식 시장 Context가 이 보고서 생성 시점에 불러와지지 않았습니다.", styles["body"]))
+        story.append(_p("이 보고서 생성 시점에 불러온 공식 데이터 없음", styles["body"]))
 
     ai_provenance = (
         report_basis_text(report.ai_provenance_status, report.ai_analysis_exists)
@@ -381,16 +541,16 @@ def build_deal_report(report: DealReportInput) -> bytes:
     )
     provenance = [
         ["구분", "이 보고서의 근거"],
-        ["Observed official data", official_context],
-        ["AI extracted from document", ai_provenance],
-        ["User confirmed", "환헤지 확인" if report.hedge_confirmed else "해당 없음"],
-        ["Current Deal input", "Financial Engine에 사용된 현재 거래, 유동성, 목표, FX 입력"],
-        ["Demo baseline", "애플리케이션의 초기 canonical reference Deal"],
-        ["Stress assumption", "USD -5%, JPY +10%, 금리 +1%p, 입금 +30일"],
-        ["Calculated result", "마진, 자금소요, 외부차입, 환노출, 기준점"],
+        ["User-entered / Treasury-confirmed fact", "현재 거래조건, 현재 가용현금, 최소 운영자금, 한도와 사용자 시나리오"],
+        ["ERP-imported company cash-plan event", "표준 CSV에서 가져온 이벤트는 ERP_IMPORT 출처를 유지"],
+        ["AI-extracted document fact", ai_provenance],
+        ["Observed official aggregate data", official_context],
+        ["Stress / user scenario assumption", "복합 악화, 조기현금화, 선물환, Usance의 명시적 가정"],
+        ["Deterministic calculated result", "Deal economics, Company Liquidity, Funding, FX, Usance, Rescue"],
+        ["Current AI review summary", "현재 검토만 포함" if report.review_is_current and report.review_memo is not None else "포함 없음"],
     ]
     story.extend([
-        _p("7. 데이터 출처와 성격", styles["section"]),
+        _p("데이터 출처와 성격", styles["section"]),
         _table(provenance, [51 * mm, 127 * mm]),
         Spacer(1, 2 * mm),
         _p(

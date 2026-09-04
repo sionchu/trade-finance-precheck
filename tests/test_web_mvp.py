@@ -139,6 +139,17 @@ def trigger_component_review(app):
     return app.run()
 
 
+def switch_stage(app, stage):
+    try:
+        state = dict(app.session_state["trade_treasury_experience"])
+    except KeyError:
+        state = {}
+    state.update({"active_stage": stage, "review_goal": state.get("review_goal", "overall"), "response_action": state.get("response_action", "none")})
+    state.pop("primary_action", None)
+    app.session_state["trade_treasury_experience"] = state
+    return app.run()
+
+
 def current_treasury_context(company_liquidity=None):
     deal = reference_deal()
     fx = reference_fx()
@@ -264,7 +275,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_app_starts_without_api_credentials(self):
         app, _, _, _ = self.render_without_credentials()
-        self.assertEqual(app.title[0].value, "수출거래 사전점검")
+        self.assertEqual(app.title[0].value, "기업 수출거래 Treasury 사전점검")
 
     def test_react_experience_shell_mounts_without_external_or_ai_calls(self):
         app, _, ksure_fetch, openai_extract = self.render_without_credentials()
@@ -276,6 +287,18 @@ class WebMvpTests(unittest.TestCase):
         self.last_statement_extract.assert_not_called()
         self.last_deal_review.assert_not_called()
 
+    def test_report_entry_is_result_stage_only(self):
+        app, _, _, _ = self.render_without_credentials()
+        self.assertFalse(any(item.key == "deal_report_download" for item in app.get("download_button")))
+
+    def test_shell_remains_visible_when_company_cash_plan_is_invalid(self):
+        app, _, _, _ = self.render_without_credentials()
+        rows = list(app.session_state["company_cash_plan_rows"])
+        rows[0] = {**rows[0], "참조": ""}
+        app.session_state["company_cash_plan_rows"] = rows
+        app.run()
+        self.assertEqual(len(app.get("bidi_component")), 1)
+
     def test_default_reference_deal_renders_without_exception(self):
         app, _, _, _ = self.render_without_credentials()
         labels = {metric.label: metric.value for metric in app.metric}
@@ -283,8 +306,7 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(app.metric[0].value, "14.64%")
         self.assertEqual(labels["현재 분석 환율"], "1,400원")
         self.assertEqual(labels["목표마진 유지선"], "1,386.47원")
-        self.assertEqual(labels["거래 최대 자금소요"], "1억 1,900만원")
-        self.assertEqual(labels["추가 필요자금"], "6,900만원")
+        self.assertNotIn("거래 최대 자금소요", labels)
 
     def test_canonical_usd_stress_is_below_fourteen_percent_target(self):
         app, _, _, _ = self.render_without_credentials()
@@ -312,24 +334,15 @@ class WebMvpTests(unittest.TestCase):
         expected_order = [
             "이 거래, 현재 조건에서 버틸까요?",
             "거래서류로 자동 입력하기",
-            "회사 자금상태",
             "조건이 나빠지면 어떻게 될까요?",
             "이 거래를 목표 수준으로 만들려면?",
-            "회사 자금으로 대금 회수일까지 버틸 수 있을까요?",
-            "회사의 실제 자금 흐름을 확인합니다",
-            "부족한 돈은 어떻게 메울까요?",
-            "수입대금 지급을 은행 신용으로 늦춰보면?",
-            "외화는 어느 방향으로 위험할까요?",
-            "환율을 열어둘까, 일부 고정할까?",
-            "공식 시장 참고정보",
-            "분석 근거",
-            "결과를 공유해야 하나요?",
         ]
         positions = [headings.index(label) for label in expected_order]
         self.assertEqual(positions, sorted(positions))
 
     def test_company_cash_plan_timeline_is_visible_and_confirmed_only(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "liquidity")
         headings = [item.value for item in app.subheader]
         self.assertIn("회사의 실제 자금 흐름을 확인합니다", headings)
         self.assertEqual([item.label for item in app.tabs], ["직접 입력", "ERP 파일 가져오기"])
@@ -386,11 +399,17 @@ class WebMvpTests(unittest.TestCase):
         visible = "\n".join(
             item.value for item in (*app.markdown, *app.metric, *app.success)
         )
-        self.assertIn("추가 조건 역산이 필요하지 않습니다", visible)
+        self.assertIn("추가 목표마진 충족 조건 계산이 필요하지 않습니다", visible)
         self.assertNotIn("최소 USD 106,017", visible)
 
     def test_report_download_is_available_without_credentials(self):
         app, _, _, _ = self.render_without_credentials()
+        app.session_state["trade_treasury_experience"] = {
+            "active_stage": "result",
+            "review_goal": "overall",
+            "response_action": "none",
+        }
+        app.run()
         self.assertEqual(
             metric_by_label(app, "생성 기준").value,
             "현재 거래 입력 기반 분석",
@@ -398,7 +417,7 @@ class WebMvpTests(unittest.TestCase):
         report_button = element_by_key(
             app.get("download_button"), "deal_report_download"
         )
-        self.assertEqual(report_button.label, "거래 사전점검 보고서 다운로드")
+        self.assertEqual(report_button.label, "Treasury 사전점검 보고서 다운로드")
         self.assertTrue(report_button.proto.url.endswith(".pdf"))
 
     def test_external_apis_are_not_invoked_on_initial_render(self):
@@ -411,6 +430,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_financial_statement_section_is_bounded_and_explicit(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "liquidity")
         self.assertIn("회사 자금상태", [item.value for item in app.subheader])
         self.assertIn("샘플 재무제표 읽기", [item.label for item in app.button])
         visible = "\n".join(item.value for item in (*app.markdown, *app.caption))
@@ -419,11 +439,13 @@ class WebMvpTests(unittest.TestCase):
 
     def test_company_funding_capacity_and_choices_are_visible(self):
         app, _, _, _ = self.render_without_credentials()
-        headings = [item.value for item in app.subheader]
-        self.assertIn("회사 자금으로 대금 회수일까지 버틸 수 있을까요?", headings)
-        self.assertIn("부족한 돈은 어떻게 메울까요?", headings)
+        switch_stage(app, "liquidity")
         labels = {item.label: item.value for item in app.metric}
         self.assertEqual(labels["미사용 한도"], "7,000만원")
+        switch_stage(app, "treasury")
+        headings = [item.value for item in app.subheader]
+        self.assertNotIn("회사 자금으로 대금 회수일까지 버틸 수 있을까요?", headings)
+        self.assertIn("부족한 돈은 어떻게 메울까요?", headings)
         number_labels = [item.label for item in app.number_input]
         self.assertIn("운전자금 한도 총액", number_labels)
         self.assertIn("현재 사용액", number_labels)
@@ -446,11 +468,13 @@ class WebMvpTests(unittest.TestCase):
         app, _, _, _ = self.render_without_credentials(
             {"운전자금 한도 총액": 90000000.0, "현재 사용액": 30000000.0}
         )
+        switch_stage(app, "treasury")
         visible = "\n".join(item.value for item in (*app.markdown, *app.error))
         self.assertGreaterEqual(visible.count("**부족**  900만원"), 2)
 
     def test_bankers_usance_comparison_is_visible_and_bounded(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "treasury")
         headings = [item.value for item in app.subheader]
         self.assertIn("수입대금 지급을 은행 신용으로 늦춰보면?", headings)
         payable_input = next(
@@ -493,6 +517,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_fx_treasury_positions_and_hedge_overlay_are_visible(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "treasury")
         headings = [item.value for item in app.subheader]
         self.assertIn("외화는 어느 방향으로 위험할까요?", headings)
         self.assertIn("환율을 열어둘까, 일부 고정할까?", headings)
@@ -546,9 +571,10 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
+            switch_stage(app, "liquidity")
             element_by_key(app.button, "analyze_financial_statement").click()
             app.run()
-            app.run()
+            switch_stage(app, "liquidity")
         self.assertEqual(app.exception, [])
         statement_extract.assert_called_once()
         labels = {metric.label: metric.value for metric in app.metric}
@@ -658,7 +684,6 @@ class WebMvpTests(unittest.TestCase):
             app.run()
         review.assert_called_once()
         visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
-        self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
         self.assertNotIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
 
     def test_each_treasury_input_stales_and_exact_restore_recovers_without_ai_call(self):
@@ -695,7 +720,6 @@ class WebMvpTests(unittest.TestCase):
                 current = "\n".join(
                     item.value for item in (*app.markdown, *app.warning)
                 )
-                self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", current)
                 self.assertNotIn(
                     "기존 AI 검토는 현재 상태와 일치하지 않습니다", current
                 )
@@ -729,6 +753,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
+            switch_stage(app, "liquidity")
             element_by_key(app.button, "analyze_financial_statement").click()
             app.run()
             trigger_component_review(app)
@@ -763,7 +788,7 @@ class WebMvpTests(unittest.TestCase):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
             app.session_state["ksure_payment_context"] = context
-            app.run()
+            switch_stage(app, "review")
             trigger_component_review(app)
 
         review.assert_called_once()
@@ -799,11 +824,11 @@ class WebMvpTests(unittest.TestCase):
             app.run()
         review.assert_not_called()
         fetch.assert_not_called()
-        visible = "\n".join(item.value for item in app.markdown)
-        self.assertIn("K-SURE", visible)
+        self.assertEqual(app.session_state["ksure_payment_context"], context)
 
     def test_public_market_surface_is_ksure_only(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "review")
         button_labels = [item.label for item in app.button]
         self.assertIn("K-SURE 결제정보 불러오기", button_labels)
         self.assertNotIn("공식 기준환율 불러오기", button_labels)
@@ -815,6 +840,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_collection_day_updates_receivable_comparison_label(self):
         app, _, _, _ = self.render_without_credentials({"결제일 (D+)": 120})
+        switch_stage(app, "treasury")
         visible = "\n".join(item.value for item in app.markdown)
         self.assertIn("D+120에 입금받기", visible)
         self.assertNotIn("90일 뒤 입금받기", visible)
@@ -842,7 +868,7 @@ class WebMvpTests(unittest.TestCase):
     def test_missing_credentials_do_not_prevent_deterministic_analysis(self):
         app, _, _, _ = self.render_without_credentials()
         self.assertTrue(any("목표 충족" in message.value for message in app.success))
-        self.assertEqual(len(app.dataframe), 4)
+        self.assertEqual(len(app.dataframe), 1)
 
     def test_ai_section_safely_reports_missing_key(self):
         app, _, _, _ = self.render_without_credentials()

@@ -294,22 +294,22 @@ input_defaults = {
 for input_key, default_value in input_defaults.items():
     st.session_state.setdefault(input_key, default_value)
 
-st.set_page_config(page_title="수출거래 사전점검", layout="wide")
+st.set_page_config(page_title="기업 수출거래 Treasury 사전점검", layout="wide")
 st.markdown(f"<style>{APP_CSS}</style>", unsafe_allow_html=True)
-st.markdown('<div class="product-label">AI TRADE FINANCE PRE-CHECK</div>', unsafe_allow_html=True)
-st.title("수출거래 사전점검")
+st.markdown('<div class="product-label">COMPANY-AWARE TRADE TREASURY PRE-CHECK</div>', unsafe_allow_html=True)
+st.title("기업 수출거래 Treasury 사전점검")
 experience_state = get_experience_state()
 active_stage = experience_state["active_stage"]
 review_goal = experience_state["review_goal"]
 response_action = experience_state["response_action"]
 st.markdown(
-    '<p class="product-lead">계약 전에 환율·입금 지연·금융비용이 바뀌어도<br>'
-    '이 거래의 마진과 현금흐름이 버티는지 확인합니다.</p>',
+    '<p class="product-lead">이 거래가 돈을 필요로 하는 시점에 회사가 실제로 버틸 수 있는지,<br>'
+    '부족한 자금과 외화위험을 현재 입력 기준으로 확인합니다.</p>',
     unsafe_allow_html=True,
 )
 st.caption("사전 의사결정 지원용 · 금융 실행, 환율 예측 또는 신용평가 서비스가 아닙니다.")
 
-st.sidebar.header("거래 입력")
+st.sidebar.header("조건 / 가정")
 st.sidebar.badge("데모 가정", color="gray")
 st.sidebar.caption("기준 거래값이 미리 입력되어 있으며 언제든 수정할 수 있습니다.")
 
@@ -462,6 +462,9 @@ except ValueError:
 
 experience_shell_slot = st.empty()
 
+deal_primary_slot = st.empty()
+deal_primary_context = deal_primary_slot.container()
+deal_primary_context.__enter__()
 st.subheader("이 거래, 현재 조건에서 버틸까요?")
 meets_target = base_result.financing_adjusted_deal_margin >= deal.target_margin
 with st.container(border=True):
@@ -732,6 +735,20 @@ if financialization is not None:
     if notice := st.session_state.pop("ai_apply_notice", None):
         st.success(notice)
 
+document_ai_status = current_ai_provenance(
+    st.session_state.get("ai_applied_patch"), deal
+)
+st.metric(
+    "생성 기준",
+    report_basis_text(document_ai_status, financialization is not None).replace("Deal", "거래"),
+)
+deal_primary_context.__exit__(None, None, None)
+if active_stage != "deal":
+    deal_primary_slot.empty()
+
+liquidity_profile_slot = st.empty()
+liquidity_profile_context = liquidity_profile_slot.container()
+liquidity_profile_context.__enter__()
 st.subheader("회사 자금상태")
 st.badge("재무제표 AI 인식", color="violet")
 st.write(
@@ -817,7 +834,13 @@ if statement_analysis is not None:
             "현재 거래 투입가능자금은 재무제표에서 자동 산정하지 않습니다. "
             "회사가 실제로 이 거래에 배정할 수 있는 금액을 사용자가 직접 확인합니다."
         )
+liquidity_profile_context.__exit__(None, None, None)
+if active_stage != "liquidity":
+    liquidity_profile_slot.empty()
 
+deal_risk_slot = st.empty()
+deal_risk_context = deal_risk_slot.container()
+deal_risk_context.__enter__()
 st.subheader("조건이 나빠지면 어떻게 될까요?")
 st.badge("Stress 가정 · 미래 예측 아님", color="orange")
 scenario_rows = []
@@ -839,7 +862,7 @@ scenario_labels = {
     Scenario.JPY_UP_10: "엔화 가치 +10%",
     Scenario.RATE_UP_1PP: "조달금리 +1%p",
     Scenario.DELAY_30D: "고객 입금 +30일",
-    Scenario.COMBINED: "복합 Stress",
+    Scenario.COMBINED: "복합 악화 시나리오",
 }
 summary_columns = st.columns(3)
 for index, (scenario, result) in enumerate(scenario_results.items()):
@@ -852,15 +875,15 @@ with st.expander("상세 수치 보기"):
     st.dataframe(scenario_rows, hide_index=True, width="stretch")
 
 st.subheader("이 거래를 목표 수준으로 만들려면?")
-st.badge("조건 역산 · 미래 예측 아님", color="orange")
+st.badge("목표마진 충족 조건 · 미래 예측 아님", color="orange")
 if not rescue_analysis.needs_rescue:
     st.success(
-        "현재 복합 Stress에서도 목표 마진을 충족합니다. "
-        "추가 조건 역산이 필요하지 않습니다."
+        "현재 복합 악화 시나리오에서도 목표 마진을 충족합니다. "
+        "추가 목표마진 충족 조건 계산이 필요하지 않습니다."
     )
 else:
     st.markdown(
-        f"복합 Stress에서는 실제로 남는 마진이 "
+        f"복합 악화 시나리오에서는 실제로 남는 마진이 "
         f"{percent(rescue_analysis.baseline_margin)}로, "
         f"목표 {percent(rescue_analysis.target_margin)}에 미달합니다."
     )
@@ -928,20 +951,26 @@ else:
         st.markdown("#### 단독 변경만으로 목표마진을 회복하기 어려운 조건")
         if RescueLever.COLLECTION_DAY in infeasible:
             st.write(
-                f"- 결제기간 단축만으로는 복합 Stress에서 목표 "
+                f"- 결제기간 단축만으로는 복합 악화 시나리오에서 목표 "
                 f"{percent(deal.target_margin)} 회복 불가"
             )
         if RescueLever.FUNDING_RATE in infeasible:
             st.write(
-                f"- 조달금리 인하만으로는 복합 Stress에서 목표 "
+                f"- 조달금리 인하만으로는 복합 악화 시나리오에서 목표 "
                 f"{percent(deal.target_margin)} 회복 불가"
             )
     st.caption(
         "가격·원가·결제조건의 실제 협상 가능성을 판단하거나 계약 체결을 "
         "권고하는 기능이 아닙니다."
     )
+deal_risk_context.__exit__(None, None, None)
+if active_stage != "deal":
+    deal_risk_slot.empty()
 
 
+liquidity_stage_slot = st.empty()
+liquidity_stage_context = liquidity_stage_slot.container()
+liquidity_stage_context.__enter__()
 st.subheader("회사 자금으로 대금 회수일까지 버틸 수 있을까요?")
 st.badge("자금 수용력 · 승인 예측 아님", color="blue")
 liquidity_metrics = st.columns(3)
@@ -1233,6 +1262,25 @@ else:
     )
     st.dataframe(timeline_rows, hide_index=True, width="stretch")
 
+if experience_data is None:
+    experience_data = build_experience_data(
+        margin=percent(base_result.financing_adjusted_deal_margin),
+        margin_detail="목표 충족" if meets_target else "목표 미달",
+        margin_status="success" if meets_target else "danger",
+        deal_funding=krw_consumer(base_result.funding.maximum_external_borrowing_krw),
+        company_peak_gap="입력 확인 필요",
+        company_peak_detail="회사 자금계획을 확인해 주세요",
+        remaining_gap="입력 확인 필요",
+        remaining_gap_detail="현재 한도 비교 불가",
+        remaining_gap_status="warning",
+    )
+liquidity_stage_context.__exit__(None, None, None)
+if active_stage != "liquidity":
+    liquidity_stage_slot.empty()
+
+treasury_stage_slot = st.empty()
+treasury_stage_context = treasury_stage_slot.container()
+treasury_stage_context.__enter__()
 if credit_line is not None:
     capacity_analysis = analyze_company_funding(
         deal=deal,
@@ -1285,25 +1333,25 @@ if deal.sale.payment_method is PaymentMethod.TT:
     st.info("EARLY_RECEIVABLE_PURCHASE는 v0.1에서 O/A 매출채권에만 적용됩니다.")
 else:
     default_purchase = canonical_purchase_option()
-    purchase_columns = st.columns(3)
-    purchase_day = purchase_columns[0].number_input(
-        "매입일 (D+)", min_value=0, value=default_purchase.purchase_day, step=1,
-        key="receivable_purchase_day_input",
-    )
-    discount_rate_percent = purchase_columns[1].number_input(
-        "연 할인율 (%)",
-        min_value=0.0,
-        value=float(default_purchase.annual_discount_rate * Decimal("100")),
-        step=0.1,
-        key="receivable_discount_rate_input",
-    )
-    fee_rate_percent = purchase_columns[2].number_input(
-        "수수료율 (%)",
-        min_value=0.0,
-        value=float(default_purchase.fee_rate * Decimal("100")),
-        step=0.05,
-        key="receivable_fee_rate_input",
-    )
+    with st.sidebar.expander("매출채권 현금화", expanded=False):
+        purchase_day = st.number_input(
+            "매입일 (D+)", min_value=0, value=default_purchase.purchase_day, step=1,
+            key="receivable_purchase_day_input",
+        )
+        discount_rate_percent = st.number_input(
+            "연 할인율 (%)",
+            min_value=0.0,
+            value=float(default_purchase.annual_discount_rate * Decimal("100")),
+            step=0.1,
+            key="receivable_discount_rate_input",
+        )
+        fee_rate_percent = st.number_input(
+            "수수료율 (%)",
+            min_value=0.0,
+            value=float(default_purchase.fee_rate * Decimal("100")),
+            step=0.05,
+            key="receivable_fee_rate_input",
+        )
     purchase_option = ReceivablePurchaseOption(
         purchase_day=int(purchase_day),
         annual_discount_rate=decimal_from_widget(discount_rate_percent) / Decimal("100"),
@@ -1400,36 +1448,36 @@ default_usance_index = next(
     ),
     0,
 )
-usance_inputs = st.columns(4)
-selected_payable_label = usance_inputs[0].selectbox(
-    "대상 외화 지급",
-    payable_labels,
-    index=default_usance_index,
-    key="usance_payable_input",
-)
-selected_payable_index = payable_labels.index(selected_payable_label)
-selected_payable = deal.foreign_payables[selected_payable_index]
-usance_repayment_day = usance_inputs[1].number_input(
-    "회사 상환일 (D+)",
-    min_value=selected_payable.payment_day + 1,
-    value=max(90, selected_payable.payment_day + 1),
-    step=1,
-    key="usance_repayment_day_input",
-)
-usance_rate_percent = usance_inputs[2].number_input(
-    "Usance 연 금리 (%)",
-    min_value=0.0,
-    value=4.8,
-    step=0.1,
-    key="usance_rate_input",
-)
-usance_fee_percent = usance_inputs[3].number_input(
-    "Usance 수수료율 (%)",
-    min_value=0.0,
-    value=0.15,
-    step=0.05,
-    key="usance_fee_input",
-)
+with st.sidebar.expander("Banker's Usance", expanded=False):
+    selected_payable_label = st.selectbox(
+        "대상 외화 지급",
+        payable_labels,
+        index=default_usance_index,
+        key="usance_payable_input",
+    )
+    selected_payable_index = payable_labels.index(selected_payable_label)
+    selected_payable = deal.foreign_payables[selected_payable_index]
+    usance_repayment_day = st.number_input(
+        "회사 상환일 (D+)",
+        min_value=selected_payable.payment_day + 1,
+        value=max(90, selected_payable.payment_day + 1),
+        step=1,
+        key="usance_repayment_day_input",
+    )
+    usance_rate_percent = st.number_input(
+        "Usance 연 금리 (%)",
+        min_value=0.0,
+        value=4.8,
+        step=0.1,
+        key="usance_rate_input",
+    )
+    usance_fee_percent = st.number_input(
+        "Usance 수수료율 (%)",
+        min_value=0.0,
+        value=0.15,
+        step=0.05,
+        key="usance_fee_input",
+    )
 st.caption("데모 입력 · 실제 은행 Usance 승인·한도·quote 아님")
 
 if credit_line is not None:
@@ -1575,55 +1623,54 @@ if (
 st.subheader("환율을 열어둘까, 일부 고정할까?")
 st.badge("선물환 시뮬레이션 · 실행 아님", color="orange")
 st.caption(
-    "기존 Stress는 계약 전체 가정이고, 아래 선물환 비교는 사용자가 입력한 "
+    "기존 복합 악화 시나리오는 계약 전체 가정이고, 아래 선물환 비교는 사용자가 입력한 "
     "정산환율 기준입니다."
 )
-forward_columns = st.columns(2)
-usd_forward = forward_columns[0].number_input(
-    "USD 선물환 매도환율",
-    min_value=0.01,
-    value=1395.0,
-    step=1.0,
-    key="usd_forward_quote_input",
-)
-usd_hedge_percent = forward_columns[0].number_input(
-    "USD 헤지비율 (%)",
-    min_value=0.0,
-    max_value=100.0,
-    value=80.0,
-    step=5.0,
-    key="usd_hedge_ratio_input",
-)
-jpy_forward = forward_columns[1].number_input(
-    "JPY 선물환 매수환율 (100 JPY)",
-    min_value=0.01,
-    value=905.0,
-    step=1.0,
-    key="jpy_forward_quote_input",
-)
-jpy_hedge_percent = forward_columns[1].number_input(
-    "JPY 헤지비율 (%)",
-    min_value=0.0,
-    max_value=100.0,
-    value=80.0,
-    step=5.0,
-    key="jpy_hedge_ratio_input",
-)
-settlement_columns = st.columns(2)
-settlement_usd = settlement_columns[0].number_input(
-    "정산 시 가정 USD/KRW",
-    min_value=0.01,
-    value=1330.0,
-    step=1.0,
-    key="settlement_usd_krw_input",
-)
-settlement_jpy = settlement_columns[1].number_input(
-    "정산 시 가정 JPY/KRW (100 JPY)",
-    min_value=0.01,
-    value=990.0,
-    step=1.0,
-    key="settlement_jpy_krw_input",
-)
+with st.sidebar.expander("외환 / 선물환", expanded=False):
+    usd_forward = st.number_input(
+        "USD 선물환 매도환율",
+        min_value=0.01,
+        value=1395.0,
+        step=1.0,
+        key="usd_forward_quote_input",
+    )
+    usd_hedge_percent = st.number_input(
+        "USD 헤지비율 (%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=80.0,
+        step=5.0,
+        key="usd_hedge_ratio_input",
+    )
+    jpy_forward = st.number_input(
+        "JPY 선물환 매수환율 (100 JPY)",
+        min_value=0.01,
+        value=905.0,
+        step=1.0,
+        key="jpy_forward_quote_input",
+    )
+    jpy_hedge_percent = st.number_input(
+        "JPY 헤지비율 (%)",
+        min_value=0.0,
+        max_value=100.0,
+        value=80.0,
+        step=5.0,
+        key="jpy_hedge_ratio_input",
+    )
+    settlement_usd = st.number_input(
+        "정산 시 가정 USD/KRW",
+        min_value=0.01,
+        value=1330.0,
+        step=1.0,
+        key="settlement_usd_krw_input",
+    )
+    settlement_jpy = st.number_input(
+        "정산 시 가정 JPY/KRW (100 JPY)",
+        min_value=0.01,
+        value=990.0,
+        step=1.0,
+        key="settlement_jpy_krw_input",
+    )
 st.caption("데모 가정 · 실제 은행 선물환 quote 아님 · 정산환율은 미래 예측 아님")
 
 fx_treasury = analyze_fx_treasury(
@@ -1690,7 +1737,13 @@ st.caption(
     "선물환 정산효과는 거래손익 비교에 반영하며, "
     "파생상품 정산에 따른 차입일정 재계산은 포함하지 않습니다."
 )
+treasury_stage_context.__exit__(None, None, None)
+if active_stage != "treasury":
+    treasury_stage_slot.empty()
 
+review_context_slot = st.empty()
+review_context_container = review_context_slot.container()
+review_context_container.__enter__()
 st.subheader("공식 시장 참고정보")
 st.write(
     "공식 데이터는 명시적으로 불러옵니다. K-SURE 정보는 참고 Context로만 "
@@ -1773,6 +1826,9 @@ with st.container(border=True):
                         width="stretch",
                     )
         st.info("K-SURE 집계정보는 현재 거래의 결제일을 자동으로 변경하지 않습니다.")
+review_context_container.__exit__(None, None, None)
+if active_stage not in {"review", "result"}:
+    review_context_slot.empty()
 
 current_payment_context = st.session_state.get("ksure_payment_context")
 treasury_review_context = TreasuryReviewContext(
@@ -1833,13 +1889,15 @@ tool_labels = {
     "read_payment_context": "K-SURE 결제 참고정보",
 }
 if experience_data is not None:
+    stage_states = {
+        "deal": "complete",
+        "liquidity": "complete" if company_liquidity_comparison is not None else "ready",
+        "treasury": "complete" if treasury_review_ready else "blocked",
+        "review": "ready" if treasury_review_ready else "blocked",
+        "result": "ready" if stored_review_run is not None else "blocked",
+    }
     experience_data["stages"] = [
-        {**stage, "state": (
-            "complete" if stage["id"] in {"deal", "liquidity", "treasury"}
-            else "ready" if stage["id"] == "review" and treasury_review_ready
-            else "ready" if stage["id"] == "result" and stored_review_run is not None
-            else "blocked"
-        )}
+        {**stage, "state": stage_states[stage["id"]]}
         for stage in experience_data["stages"]
     ]
     experience_data["dealFacts"] = [
@@ -1897,10 +1955,13 @@ if primary_action == "run_review" and treasury_review_ready:
             st.session_state["deal_review_run"] = review_run
             st.session_state.pop("deal_review_error", None)
 
-if review_error := st.session_state.get("deal_review_error"):
+if active_stage in {"review", "result"} and (
+    review_error := st.session_state.get("deal_review_error")
+):
     st.warning(review_error)
 
 review_run = st.session_state.get("deal_review_run")
+review_is_current = False
 if review_run is not None:
     review_is_current = is_current_deal_review(
         review_run,
@@ -1915,7 +1976,7 @@ if review_run is not None:
             "현재 거래 입력 또는 공식 Context가 변경되어 기존 AI 검토는 현재 "
             "상태와 일치하지 않습니다. 다시 생성해 주세요."
         )
-    else:
+    elif active_stage == "result":
         memo = review_run.memo
         st.markdown(f"### {memo.headline}")
         st.write(memo.summary)
@@ -1980,7 +2041,7 @@ if review_run is not None:
                         )
                     for label, capacity in (
                         ("현재", funding.base_capacity),
-                        ("복합 Stress", funding.combined_capacity),
+                        ("복합 악화 시나리오", funding.combined_capacity),
                     ):
                         status = "한도 내" if capacity.feasible else "한도 초과"
                         balance_label = "여유" if capacity.feasible else "부족"
@@ -2072,7 +2133,7 @@ if review_run is not None:
                     if lever in options:
                         render_rescue_option(options[lever])
                     else:
-                        st.write("현재 Stress에서는 추가 조건 역산이 필요하지 않습니다.")
+                        st.write("현재 시나리오에서는 추가 목표마진 충족 조건 계산이 필요하지 않습니다.")
 
         if memo.negotiation_focus:
             st.markdown("#### AI가 설명 대상으로 선택한 계약조건")
@@ -2080,7 +2141,7 @@ if review_run is not None:
                 if lever in options:
                     render_rescue_option(options[lever])
                 else:
-                    st.write("현재 Stress에서는 추가 조건 역산이 필요하지 않습니다.")
+                    st.write("현재 시나리오에서는 추가 목표마진 충족 조건 계산이 필요하지 않습니다.")
 
         if treasury_review_context.company_liquidity is not None:
             profile = treasury_review_context.company_liquidity
@@ -2129,27 +2190,6 @@ if review_run is not None:
                 )
 
 
-st.subheader("분석 근거")
-evidence_columns = st.columns(3)
-with evidence_columns[0].container(border=True):
-    st.markdown("**계산 엔진**")
-    st.write("마진·현금흐름·Stress를 결정론적으로 계산")
-with evidence_columns[1].container(border=True):
-    st.markdown("**AI 문서 추출**")
-    st.write("계약서에서 금액·통화·지급시점만 추출")
-with evidence_columns[2].container(border=True):
-    st.markdown("**사용자 확인**")
-    st.write("AI 값은 명시적 확인 후에만 거래에 반영")
-evidence_columns = st.columns(2)
-with evidence_columns[0].container(border=True):
-    st.markdown("**공식 데이터**")
-    st.write("K-SURE 결제 참고정보, 실제 불러온 경우만 표시")
-with evidence_columns[1].container(border=True):
-    st.markdown("**Stress 가정**")
-    st.write("미래 예측이 아닌 조건 변화 시뮬레이션")
-
-st.subheader("결과를 공유해야 하나요?")
-st.write("현재 분석 결과를 2페이지 사전점검 보고서로 저장할 수 있습니다.")
 ai_provenance_status = current_ai_provenance(
     st.session_state.get("ai_applied_patch"),
     deal,
@@ -2162,16 +2202,6 @@ payment_context = st.session_state.get("ksure_payment_context")
 official_context = official_context_text(
     fx_reference=None,
     payment_context=payment_context,
-)
-report_preview = st.columns(3)
-report_preview[0].metric("현재 상태", "목표 충족" if meets_target else "목표 미달")
-report_preview[1].metric(
-    "생성 기준",
-    report_basis.replace("Deal", "거래"),
-)
-report_preview[2].metric(
-    "공식 데이터",
-    official_context,
 )
 report_bytes = build_deal_report(
     DealReportInput(
@@ -2186,14 +2216,38 @@ report_bytes = build_deal_report(
         ai_analysis_exists=financialization is not None,
         ai_provenance_status=ai_provenance_status,
         hedge_confirmed=bool(st.session_state.get("ai_hedge_confirmation")),
+        company_liquidity_timeline=company_liquidity_comparison,
+        company_liquidity_capacity=company_credit_capacity,
+        treasury_confirmed_current_cash_krw=(
+            company_liquidity_input.current_available_cash_krw
+            if company_liquidity_comparison is not None else None
+        ),
+        minimum_operating_cash_krw=(
+            company_liquidity_input.minimum_operating_cash_krw
+            if company_liquidity_comparison is not None else None
+        ),
+        company_funding=company_funding_analysis,
+        fx_treasury=fx_treasury_analysis,
+        bankers_usance=bankers_usance_comparison,
+        company_liquidity_includes_expected=bool(include_expected_company_events),
+        review_memo=review_run.memo if review_is_current else None,
+        review_used_tools=review_run.used_tools if review_is_current else (),
+        review_is_current=review_is_current,
     )
 )
-st.download_button(
-    "거래 사전점검 보고서 다운로드",
-    data=report_bytes,
-    file_name="trade-finance-precheck-report.pdf",
-    mime="application/pdf",
-    type="primary",
-    key="deal_report_download",
-)
-st.caption("현재 화면의 결정론적 분석 결과로 즉시 생성되며 서버에 저장되지 않습니다.")
+if active_stage == "result":
+    st.subheader("결과를 공유해야 하나요?")
+    st.write("현재 입력 기준 계산과 현재 거래 검토를 최대 3페이지 보고서로 저장합니다.")
+    report_preview = st.columns(3)
+    report_preview[0].metric("현재 상태", "목표 충족" if meets_target else "목표 미달")
+    report_preview[1].metric("생성 기준", report_basis.replace("Deal", "거래"))
+    report_preview[2].metric("공식 데이터", official_context)
+    st.download_button(
+        "Treasury 사전점검 보고서 다운로드",
+        data=report_bytes,
+        file_name="trade-treasury-precheck-report.pdf",
+        mime="application/pdf",
+        type="primary",
+        key="deal_report_download",
+    )
+    st.caption("현재 화면의 결정론적 분석 결과로 즉시 생성되며 서버에 저장되지 않습니다.")

@@ -1,4 +1,4 @@
-AI Trade Finance Pre-check — Product Spec v0.1
+기업 수출거래 Treasury 사전점검 — Product Spec v0.1
 
 Status: Canonical implementation and product specification
 Purpose: 2026 금융 AI Challenge MVP
@@ -23,6 +23,8 @@ FROZEN / IMPLEMENTED:
 • Single Deal Review Agent with Treasury context
 • T6-A Company Liquidity Timeline
 • T6-B React Experience Shell
+• T6-C Guided Decision / Agent UX Orchestration
+• T6-D Report / Submission / Final Product Freeze
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
 • Public Streamlit deployment
@@ -35,8 +37,9 @@ VALIDATED / DEFERRED:
 CURRENT GATE:
 
 • T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze
-• T6-C Guided Decision / Agent UX Orchestration — IMPLEMENTED / FROZEN
-• Next authorized slice: T6-D — Report / Submission / Final Product Freeze
+• T6-D — IMPLEMENTED / FROZEN
+• Product state: FINAL SUBMISSION CANDIDATE
+• No feature work; only evidenced P0 correctness or deployment fixes before submission
 
 DEFERRED:
 
@@ -1505,12 +1508,12 @@ T6 authorizes:
 • ERP CSV export-file import
 • calendar-date company cash events
 • prospective Deal cashflow overlay
-• later React Experience Shell
-• later Agent UX orchestration
-• later report and submission finalization
+• React Experience Shell
+• guided Agent UX orchestration
+• final report and submission finalization
 
-T1–T5 and T6-A through T6-C are implemented and frozen. The next authorized
-slice is T6-D — Report / Submission / Final Product Freeze. No separate T7 is defined.
+T1–T5 and T6-A through T6-D are implemented and frozen. The product is a final
+submission candidate. No separate T7 is defined and no feature work follows T6.
 
 ────────
 
@@ -1670,4 +1673,7 @@ finance. The existing Treasury evidence tool now also reads the deterministic
 Company Liquidity Timeline and current-line capacity. No new Agent, tool, retry,
 or simulated tool-progress sequence is introduced.
 
-The next authorized slice is T6-D — Report / Submission / Final Product Freeze.
+T6-D keeps the same report path and adds only current, already-computed Company
+Liquidity, Funding, FX Treasury, Banker's Usance and current Deal Review evidence.
+The report never invokes AI or external data, and a stale review is omitted.
+`docs/submission.md` is the single canonical competition-submission source.

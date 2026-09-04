@@ -3,17 +3,34 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 import unittest
 from unittest.mock import patch
+import re
 
 from src.ai.financialization import ExtractedPaymentMethod, ProposedDealPatch
+from src.ai.deal_review import DealReviewMemo, SupportingSignal, TreasuryFocus
 from src.domain.deal_case import PaymentMethod, reference_deal, reference_fx
 from src.external.eximbank_fx import FxReferenceSnapshot
 from src.external.ksure_payment import PaymentContext
 from src.finance.engine import (
+    Scenario,
     canonical_purchase_option,
     canonical_scenarios,
     evaluate_deal,
+    evaluate_scenario,
     solve_usd_krw_threshold,
 )
+from src.finance.company_liquidity import (
+    CompanyCashEvent,
+    CompanyCashEventCategory,
+    CompanyCashEventSource,
+    CompanyCashEventStatus,
+    CompanyLiquidityInput,
+    analyze_company_liquidity,
+    compare_company_gap_to_credit_line,
+)
+from src.finance.fx_treasury import ForwardHedgeInput, analyze_fx_treasury
+from src.finance.liquidity import WorkingCapitalCreditLine, analyze_company_funding
+from src.finance.usance import BankersUsanceInput, analyze_bankers_usance
+from src.domain.deal_case import Currency, FxRates
 from src.reporting.deal_report import (
     AiProvenanceStatus,
     DealReportInput,
@@ -46,6 +63,61 @@ def reference_report_input(**overrides) -> DealReportInput:
     }
     values.update(overrides)
     return DealReportInput(**values)
+
+
+def treasury_report_input(*, include_expected=False, review_is_current=True):
+    deal = reference_deal()
+    fx = reference_fx()
+    base = evaluate_deal(deal, fx)
+    purchase = evaluate_deal(deal, fx, purchase_option=canonical_purchase_option())
+    line = WorkingCapitalCreditLine(Decimal("100000000"), Decimal("30000000"))
+    funding = analyze_company_funding(
+        deal=deal, base_result=base,
+        combined_result=evaluate_scenario(deal, fx, Scenario.COMBINED),
+        credit_line=line, purchase_result=purchase,
+    )
+    events = (
+        CompanyCashEvent(date(2026, 9, 24), CompanyCashEventCategory.AR_COLLECTION, Decimal("40000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "기존 매출채권 A"),
+        CompanyCashEvent(date(2026, 10, 4), CompanyCashEventCategory.PAYROLL_TAX, Decimal("-50000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "급여·세금"),
+        CompanyCashEvent(date(2026, 10, 19), CompanyCashEventCategory.AR_COLLECTION, Decimal("20000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "기존 매출채권 B"),
+        CompanyCashEvent(date(2026, 10, 29), CompanyCashEventCategory.AR_COLLECTION, Decimal("30000000"), CompanyCashEventStatus.EXPECTED, CompanyCashEventSource.MANUAL, "예상 수금 C"),
+        CompanyCashEvent(date(2026, 11, 3), CompanyCashEventCategory.CAPEX, Decimal("-30000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "확정 설비대금"),
+    )
+    timeline = analyze_company_liquidity(
+        liquidity_input=CompanyLiquidityInput(date(2026, 9, 4), Decimal("120000000"), Decimal("70000000"), events, include_expected),
+        deal=deal, fx=fx,
+    )
+    capacity = compare_company_gap_to_credit_line(timeline.company_with_deal, line)
+    fx_treasury = analyze_fx_treasury(
+        deal=deal, current_fx=fx, settlement_fx=FxRates(Decimal("1330"), Decimal("990")),
+        hedge_inputs=(
+            ForwardHedgeInput(Currency.USD, Decimal("0.8"), Decimal("1395")),
+            ForwardHedgeInput(Currency.JPY, Decimal("0.8"), Decimal("905")),
+        ),
+    )
+    usance = analyze_bankers_usance(
+        deal=deal, fx=fx, base_result=base, credit_line=line,
+        usance_input=BankersUsanceInput(1, 90, Decimal("0.048"), Decimal("0.0015")),
+    )
+    memo = DealReviewMemo(
+        headline="회사 전체 유동성을 먼저 확인합니다",
+        summary="거래 단독 자금과 기존 회사 계획을 함께 살펴야 합니다.",
+        treasury_focus=TreasuryFocus.CREDIT_LINE_CAPACITY,
+        supporting_signals=(SupportingSignal.COMBINED_STRESS,),
+        negotiation_focus=(),
+    )
+    return reference_report_input(
+        company_liquidity_timeline=timeline,
+        company_liquidity_capacity=capacity,
+        treasury_confirmed_current_cash_krw=Decimal("120000000"),
+        minimum_operating_cash_krw=Decimal("70000000"),
+        company_funding=funding, fx_treasury=fx_treasury,
+        bankers_usance=usance,
+        company_liquidity_includes_expected=include_expected,
+        review_memo=memo,
+        review_used_tools=("read_current_deal_analysis", "read_stress_and_rescue", "read_treasury_context", "read_payment_context"),
+        review_is_current=review_is_current,
+    )
 
 
 class DealReportTests(unittest.TestCase):
@@ -107,12 +179,12 @@ class DealReportTests(unittest.TestCase):
             payment_period_distribution=(),
         )
         cases = (
-            (None, payment_context, "K-SURE 결제 Context"),
-            (fx_reference, None, "한국수출입은행 환율 Context"),
+            (None, payment_context, "K-SURE 결제 참고정보"),
+            (fx_reference, None, "한국수출입은행 환율 참고정보"),
             (
                 fx_reference,
                 payment_context,
-                "한국수출입은행 환율 / K-SURE 결제 Context",
+                "한국수출입은행 환율 / K-SURE 결제 참고정보",
             ),
             (None, None, "이 세션에 불러온 공식 데이터 없음"),
         )
@@ -204,6 +276,53 @@ class DealReportTests(unittest.TestCase):
         report_input = reference_report_input(deal=tt_deal)
         self.assertIsNone(report_input.purchase_result)
         self.assert_pdf(report_input)
+
+    def report_text(self, report_input):
+        from src.reporting import deal_report
+        captured = []
+        original = deal_report._p
+
+        def recording_paragraph(text, style):
+            captured.append(text)
+            return original(text, style)
+
+        with patch("src.reporting.deal_report._p", side_effect=recording_paragraph):
+            output = self.assert_pdf(report_input)
+        return "\n".join(captured), output
+
+    def test_final_branding_and_company_treasury_sections(self):
+        text, output = self.report_text(treasury_report_input())
+        self.assertIn("기업 수출거래 Treasury 사전점검 보고서", text)
+        self.assertNotIn("AI Trade Finance Pre-check", text)
+        self.assertIn("Company-wide liquidity", text)
+        report_input = treasury_report_input()
+        self.assertEqual(report_input.company_liquidity_timeline.company_with_deal.peak_liquidity_gap_krw, Decimal("89000000"))
+        self.assertEqual(report_input.company_liquidity_capacity.liquidity_gap_krw, Decimal("19000000"))
+        self.assertEqual(report_input.base_result.funding.maximum_external_borrowing_krw, Decimal("69000000"))
+        self.assertIn("2026-11-03 / D+60", text)
+        self.assertIn("Banker's Usance", text)
+        self.assertIn("FX Treasury", text)
+        self.assertIn("회사 전체 유동성을 먼저 확인합니다", text)
+        self.assertLessEqual(len(re.findall(rb"/Type\s*/Page\b", output)), 3)
+
+    def test_expected_mode_is_labeled_as_user_scenario(self):
+        text, _ = self.report_text(treasury_report_input(include_expected=True))
+        self.assertIn("EXPECTED 포함 사용자 선택 시나리오", text)
+        self.assertNotIn("예측", next(line for line in text.splitlines() if "EXPECTED" in line))
+
+    def test_stale_review_is_not_included(self):
+        text, _ = self.report_text(treasury_report_input(review_is_current=False))
+        self.assertIn("현재 조건 기준 거래 검토 요약 없음", text)
+        self.assertNotIn("회사 전체 유동성을 먼저 확인합니다", text)
+
+    def test_treasury_report_is_repeatable_and_does_not_mutate_inputs(self):
+        report_input = treasury_report_input()
+        timeline_before = report_input.company_liquidity_timeline
+        first_text, first = self.report_text(report_input)
+        second_text, second = self.report_text(report_input)
+        self.assertEqual(first_text, second_text)
+        self.assertEqual(len(first), len(second))
+        self.assertEqual(report_input.company_liquidity_timeline, timeline_before)
 
 
 if __name__ == "__main__":

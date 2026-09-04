@@ -1,4 +1,4 @@
-# AI Trade Finance Pre-check
+# 기업 수출거래 Treasury 사전점검
 
 A Company-aware Trade Treasury Pre-check for evaluating one export Deal's economics, the company's Deal-specific liquidity capacity, and currency-level FX exposure before execution.
 
@@ -57,14 +57,17 @@ deterministically when loaded, not selected by the model. Numeric evidence
 remains rendered from deterministic application state.
 
 The current authorized gate is **T6 — Final Product Completion / Presentation IA
-RE0 / Report / Submission Freeze**. T6-A, T6-B, and T6-C are implemented and frozen.
+RE0 / Report / Submission Freeze**. T6-A, T6-B, and T6-C are implemented and frozen;
+T6-D finalizes stage-exclusive presentation, the company-aware Treasury report,
+and the single canonical [submission source](docs/submission.md).
 The company-wide liquidity timeline combines Treasury-confirmed current cash,
 existing confirmed cash-plan events, and the prospective Deal's frozen dated
 cashflows. The React Experience Shell adds five-stage navigation and a compact
 current-state summary while Python remains authoritative for every financial
 value. The internal precompiled Streamlit Components v2 React bundle now guides
 condition → choice → review → result → response while Python remains authoritative.
-The next authorized slice is T6-D — Report / Submission / Final Product Freeze.
+After T6-D acceptance the product is frozen; only evidenced P0 correctness or
+deployment fixes are authorized before submission.
 
 The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
 Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4
