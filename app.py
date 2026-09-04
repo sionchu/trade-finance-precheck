@@ -8,7 +8,8 @@ import streamlit as st
 
 from src.ai.deal_review import (
     DealReviewError,
-    ReviewSignal,
+    SupportingSignal,
+    TreasuryFocus,
     TreasuryReviewContext,
     is_current_deal_review,
     run_deal_review,
@@ -1499,7 +1500,25 @@ review_question = st.text_area(
     max_chars=400,
     key="deal_review_question",
 )
-if st.button("AI 거래 검토 실행", type="primary", key="run_deal_review"):
+treasury_review_ready = all(
+    analysis is not None
+    for analysis in (
+        company_funding_analysis,
+        fx_treasury_analysis,
+        bankers_usance_comparison,
+    )
+)
+if not treasury_review_ready:
+    st.warning(
+        "현재 Treasury 입력으로 결정론적 분석을 완성할 수 없습니다. "
+        "자금조달·외화위험·Usance 입력을 먼저 확인해 주세요."
+    )
+if st.button(
+    "AI 거래 검토 실행",
+    type="primary",
+    key="run_deal_review",
+    disabled=not treasury_review_ready,
+):
     with st.spinner("현재 거래 근거를 읽고 검토하고 있습니다..."):
         try:
             review_run = run_deal_review(
@@ -1544,17 +1563,24 @@ if review_run is not None:
         memo = review_run.memo
         st.markdown(f"### {memo.headline}")
         st.write(memo.summary)
-        st.markdown("#### AI가 선택한 핵심 근거")
+        display_signals = (
+            memo.treasury_focus,
+            *memo.supporting_signals,
+        )
         options = rescue_option_map(rescue_analysis)
-        for signal in memo.key_signals:
+        for index, signal in enumerate(display_signals):
+            if index == 0:
+                st.markdown("#### 먼저 확인할 Treasury 이슈")
+            elif index == 1:
+                st.markdown("#### 함께 본 근거")
             with st.container(border=True):
-                if signal is ReviewSignal.CURRENT_MARGIN:
+                if signal is SupportingSignal.CURRENT_MARGIN:
                     st.markdown("**현재 마진**")
                     st.write(
                         f"{percent(base_result.financing_adjusted_deal_margin)} · "
                         f"{'✓ 목표 충족' if meets_target else '목표 미달'}"
                     )
-                elif signal is ReviewSignal.FX_RESILIENCE:
+                elif signal is SupportingSignal.FX_RESILIENCE:
                     st.markdown("**USD/KRW 목표마진 유지선**")
                     if target_threshold is None:
                         st.write("현재 입력에서는 계산 불가")
@@ -1564,13 +1590,13 @@ if review_run is not None:
                             f"현재 {fx.usd_krw:,.2f}원 · 유지선 "
                             f"{target_threshold:,.2f}원 · 차이 {buffer:+,.2f}원"
                         )
-                elif signal is ReviewSignal.FUNDING_BURDEN:
+                elif signal is SupportingSignal.FUNDING_BURDEN:
                     st.markdown("**자금 부담**")
                     st.write(
                         f"최대 자금소요 {krw_consumer(base_result.funding.peak_deal_funding_krw)}"
                         f" · 최대 외부차입 {krw_consumer(base_result.funding.maximum_external_borrowing_krw)}"
                     )
-                elif signal is ReviewSignal.COMBINED_STRESS:
+                elif signal is SupportingSignal.COMBINED_STRESS:
                     combined_meets = (
                         combined_result.financing_adjusted_deal_margin
                         >= deal.target_margin
@@ -1580,21 +1606,7 @@ if review_run is not None:
                         f"마진 {percent(combined_result.financing_adjusted_deal_margin)} · "
                         f"{'✓ 목표 충족' if combined_meets else '목표 미달'}"
                     )
-                elif signal is ReviewSignal.COMPANY_LIQUIDITY:
-                    profile = treasury_review_context.company_liquidity
-                    st.markdown("**회사 자금상태**")
-                    st.write(
-                        "재무제표상 현금 및 현금성자산 "
-                        f"{optional_krw_consumer(profile.cash_and_cash_equivalents_krw)} · "
-                        f"이번 거래 투입가능 회사자금 {krw_consumer(deal.available_cash_krw)}"
-                    )
-                    st.write(
-                        f"단기차입금 {optional_krw_consumer(profile.short_term_borrowings_krw)} · "
-                        "영업활동현금흐름 "
-                        f"{optional_krw_consumer(profile.operating_cash_flow_krw)}"
-                    )
-                    st.caption("재무제표상 현금은 Deal 투입가능자금과 동일하지 않습니다.")
-                elif signal is ReviewSignal.CREDIT_LINE_CAPACITY:
+                elif signal is TreasuryFocus.CREDIT_LINE_CAPACITY:
                     funding = treasury_review_context.company_funding
                     st.markdown("**운전자금 한도 수용력**")
                     for label, capacity in (
@@ -1613,7 +1625,7 @@ if review_run is not None:
                             f"미사용 {krw_consumer(capacity.unused_credit_limit_krw)} · "
                             f"{balance_label} {krw_consumer(balance)} · {status}"
                         )
-                elif signal is ReviewSignal.FUNDING_OPTIONS:
+                elif signal is TreasuryFocus.FUNDING_OPTIONS:
                     st.markdown("**자금조달 비교**")
                     funding = treasury_review_context.company_funding
                     funding_labels = {
@@ -1637,7 +1649,7 @@ if review_run is not None:
                             f"필요 {krw_consumer(choice.required_external_funding_krw)} · "
                             f"비용 {cost} · 현금유입 {inflow}"
                         )
-                elif signal is ReviewSignal.FX_EXPOSURE:
+                elif signal is TreasuryFocus.FX_EXPOSURE:
                     st.markdown("**통화별 외화노출**")
                     for position in treasury_review_context.fx_treasury.positions:
                         st.write(
@@ -1646,7 +1658,7 @@ if review_run is not None:
                             f"불리한 방향 {position.unfavorable_direction.value}"
                         )
                     st.caption("금액 기준 상계와 지급·수취 시점 일치는 다릅니다.")
-                elif signal is ReviewSignal.FORWARD_HEDGE:
+                elif signal is TreasuryFocus.FORWARD_HEDGE:
                     analysis = treasury_review_context.fx_treasury
                     st.markdown("**선물환 시뮬레이션**")
                     for hedge in analysis.settlement_scenario_hedges:
@@ -1661,7 +1673,7 @@ if review_run is not None:
                         f"효과 {signed_krw_consumer(overlay.hedge_effect_krw)} · "
                         f"{'✓ 목표 충족' if overlay.simulated_margin_after_hedge >= deal.target_margin else '목표 미달'}"
                     )
-                elif signal is ReviewSignal.BANKERS_USANCE:
+                elif signal is TreasuryFocus.BANKERS_USANCE:
                     comparison = treasury_review_context.bankers_usance
                     usance = comparison.usance
                     st.markdown("**Banker's Usance**")
@@ -1679,24 +1691,13 @@ if review_run is not None:
                         f"금융비용 차이 {signed_krw_consumer(comparison.financing_cost_difference_krw)}"
                     )
                     st.caption("일반 운전자금 사용 감소와 총 은행 원금 감소는 같은 의미가 아닙니다.")
-                elif signal is ReviewSignal.KSURE_PAYMENT_CONTEXT:
-                    if current_payment_context is not None:
-                        st.markdown("**K-SURE 결제 Context**")
-                        st.write(
-                            "평균 결제기간 "
-                            f"{decimal_text(current_payment_context.average_payment_period_days, '일')} · "
-                            "지연결제율 "
-                            f"{decimal_text(current_payment_context.late_payment_rate_percent, '%')} · "
-                            "평균 지연기간 "
-                            f"{decimal_text(current_payment_context.average_late_payment_period_days, '일')}"
-                        )
                 else:
                     signal_levers = {
-                        ReviewSignal.SALE_PRICE_BOUNDARY: RescueLever.SALE_AMOUNT_USD,
-                        ReviewSignal.USD_COST_BOUNDARY: RescueLever.USD_PAYABLE_AMOUNT,
-                        ReviewSignal.JPY_COST_BOUNDARY: RescueLever.JPY_PAYABLE_AMOUNT,
-                        ReviewSignal.COLLECTION_DAY_BOUNDARY: RescueLever.COLLECTION_DAY,
-                        ReviewSignal.FUNDING_RATE_BOUNDARY: RescueLever.FUNDING_RATE,
+                        SupportingSignal.SALE_PRICE_BOUNDARY: RescueLever.SALE_AMOUNT_USD,
+                        SupportingSignal.USD_COST_BOUNDARY: RescueLever.USD_PAYABLE_AMOUNT,
+                        SupportingSignal.JPY_COST_BOUNDARY: RescueLever.JPY_PAYABLE_AMOUNT,
+                        SupportingSignal.COLLECTION_DAY_BOUNDARY: RescueLever.COLLECTION_DAY,
+                        SupportingSignal.FUNDING_RATE_BOUNDARY: RescueLever.FUNDING_RATE,
                     }
                     lever = signal_levers[signal]
                     if lever in options:
@@ -1712,10 +1713,33 @@ if review_run is not None:
                 else:
                     st.write("현재 Stress에서는 추가 조건 역산이 필요하지 않습니다.")
 
-        if current_payment_context is not None and memo.payment_context_note:
-            st.markdown("#### K-SURE Context 해석")
+        if treasury_review_context.company_liquidity is not None:
+            profile = treasury_review_context.company_liquidity
+            st.markdown("#### 회사 자금 맥락")
+            with st.container(border=True):
+                st.write(
+                    "재무제표상 현금 및 현금성자산 "
+                    f"{optional_krw_consumer(profile.cash_and_cash_equivalents_krw)} · "
+                    f"이번 거래 투입가능 회사자금 {krw_consumer(deal.available_cash_krw)}"
+                )
+                st.write(
+                    f"단기차입금 {optional_krw_consumer(profile.short_term_borrowings_krw)} · "
+                    "영업활동현금흐름 "
+                    f"{optional_krw_consumer(profile.operating_cash_flow_krw)}"
+                )
+                st.caption("재무제표상 현금은 Deal 투입가능자금과 동일하지 않습니다.")
+
+        if current_payment_context is not None:
+            st.markdown("#### 공식 결제 참고정보")
             st.warning("국가·업종 집계 · 개별 바이어 예측 아님")
-            st.write(memo.payment_context_note)
+            st.write(
+                "평균 결제기간 "
+                f"{decimal_text(current_payment_context.average_payment_period_days, '일')} · "
+                "지연결제율 "
+                f"{decimal_text(current_payment_context.late_payment_rate_percent, '%')} · "
+                "평균 지연기간 "
+                f"{decimal_text(current_payment_context.average_late_payment_period_days, '일')}"
+            )
 
         st.markdown("#### 사용한 분석 도구")
         tool_labels = {

@@ -8,8 +8,9 @@ import unittest
 from src.ai.deal_review import (
     DealReviewError,
     DealReviewMemo,
-    ReviewSignal,
+    SupportingSignal,
     TOOL_NAMES,
+    TreasuryFocus,
     TreasuryReviewContext,
     _current_deal_payload,
     _payment_context_payload,
@@ -114,12 +115,12 @@ def memo(**overrides):
     values = {
         "headline": "복합 상황에서 계약조건 점검이 필요합니다",
         "summary": "가격과 원가 경계를 함께 읽고 자금 부담의 원인을 확인해야 합니다.",
-        "key_signals": (
-            ReviewSignal.COMBINED_STRESS,
-            ReviewSignal.CREDIT_LINE_CAPACITY,
+        "treasury_focus": TreasuryFocus.CREDIT_LINE_CAPACITY,
+        "supporting_signals": (
+            SupportingSignal.COMBINED_STRESS,
+            SupportingSignal.FX_RESILIENCE,
         ),
         "negotiation_focus": (RescueLever.SALE_AMOUNT_USD,),
-        "payment_context_note": None,
     }
     values.update(overrides)
     return DealReviewMemo(**values)
@@ -127,9 +128,9 @@ def memo(**overrides):
 
 def legacy_only_memo():
     return memo(
-        key_signals=(
-            ReviewSignal.COMBINED_STRESS,
-            ReviewSignal.SALE_PRICE_BOUNDARY,
+        supporting_signals=(
+            SupportingSignal.COMBINED_STRESS,
+            SupportingSignal.SALE_PRICE_BOUNDARY,
         )
     )
 
@@ -343,79 +344,124 @@ class DealReviewTests(unittest.TestCase):
     def test_final_structured_memo_is_returned(self):
         result = self.invoke(FakeClient())
         self.assertIsInstance(result.memo, DealReviewMemo)
-        self.assertEqual(result.memo.key_signals[0], ReviewSignal.COMBINED_STRESS)
+        self.assertEqual(
+            result.memo.treasury_focus, TreasuryFocus.CREDIT_LINE_CAPACITY
+        )
+        self.assertEqual(
+            result.memo.supporting_signals[0], SupportingSignal.COMBINED_STRESS
+        )
+
+    def test_treasury_focus_contains_exactly_five_supported_values(self):
+        self.assertEqual(
+            {focus.value for focus in TreasuryFocus},
+            {
+                "CREDIT_LINE_CAPACITY",
+                "FUNDING_OPTIONS",
+                "FX_EXPOSURE",
+                "FORWARD_HEDGE",
+                "BANKERS_USANCE",
+            },
+        )
+        self.assertNotIn("COMPANY_LIQUIDITY", {focus.value for focus in TreasuryFocus})
+
+    def test_supporting_signal_contains_exactly_always_available_deal_values(self):
+        self.assertEqual(
+            {signal.value for signal in SupportingSignal},
+            {
+                "CURRENT_MARGIN",
+                "FX_RESILIENCE",
+                "FUNDING_BURDEN",
+                "COMBINED_STRESS",
+                "SALE_PRICE_BOUNDARY",
+                "USD_COST_BOUNDARY",
+                "JPY_COST_BOUNDARY",
+                "COLLECTION_DAY_BOUNDARY",
+                "FUNDING_RATE_BOUNDARY",
+            },
+        )
+        self.assertNotIn("COMPANY_LIQUIDITY", SupportingSignal.__members__)
+        self.assertNotIn("KSURE_PAYMENT_CONTEXT", SupportingSignal.__members__)
+        self.assertTrue(
+            {focus.value for focus in TreasuryFocus}.isdisjoint(
+                {signal.value for signal in SupportingSignal}
+            )
+        )
+
+    def test_memo_requires_treasury_focus(self):
+        values = memo().model_dump()
+        values.pop("treasury_focus")
+        with self.assertRaises(Exception):
+            DealReviewMemo(**values)
 
     def test_numeric_ai_prose_is_rejected(self):
         client = FakeClient(final_memo=memo(summary="마진은 8퍼센트 수준입니다."))
         with self.assertRaises(DealReviewError):
             self.invoke(client)
 
-    def test_ksure_note_without_loaded_context_is_rejected(self):
-        client = FakeClient(final_memo=memo(payment_context_note="집계 맥락을 참고합니다."))
-        with self.assertRaises(DealReviewError):
-            self.invoke(client)
+    def test_valid_focus_accepts_legacy_only_supporting_signals(self):
+        result = self.invoke(FakeClient(final_memo=legacy_only_memo()))
+        self.assertEqual(
+            result.memo.supporting_signals,
+            legacy_only_memo().supporting_signals,
+        )
 
-    def test_ksure_signal_without_loaded_context_is_rejected(self):
-        client = FakeClient(
-            final_memo=memo(
-                key_signals=(
-                    ReviewSignal.COMBINED_STRESS,
-                    ReviewSignal.KSURE_PAYMENT_CONTEXT,
+    def test_each_available_treasury_focus_passes(self):
+        for focus in TreasuryFocus:
+            with self.subTest(focus=focus):
+                result = self.invoke(
+                    FakeClient(final_memo=legacy_only_memo().model_copy(
+                        update={"treasury_focus": focus}
+                    ))
                 )
-            )
-        )
-        with self.assertRaises(DealReviewError):
-            self.invoke(client)
+                self.assertEqual(result.memo.treasury_focus, focus)
 
-    def test_unavailable_treasury_signals_are_rejected(self):
+    def test_each_unavailable_treasury_focus_is_rejected(self):
         cases = (
-            (TreasuryReviewContext(None, self.treasury.company_funding, self.treasury.fx_treasury, self.treasury.bankers_usance), ReviewSignal.COMPANY_LIQUIDITY),
-            (TreasuryReviewContext(self.treasury.company_liquidity, None, self.treasury.fx_treasury, self.treasury.bankers_usance), ReviewSignal.CREDIT_LINE_CAPACITY),
-            (TreasuryReviewContext(self.treasury.company_liquidity, None, self.treasury.fx_treasury, self.treasury.bankers_usance), ReviewSignal.FUNDING_OPTIONS),
-            (TreasuryReviewContext(self.treasury.company_liquidity, self.treasury.company_funding, None, self.treasury.bankers_usance), ReviewSignal.FX_EXPOSURE),
-            (TreasuryReviewContext(self.treasury.company_liquidity, self.treasury.company_funding, None, self.treasury.bankers_usance), ReviewSignal.FORWARD_HEDGE),
-            (TreasuryReviewContext(self.treasury.company_liquidity, self.treasury.company_funding, self.treasury.fx_treasury, None), ReviewSignal.BANKERS_USANCE),
+            (TreasuryReviewContext(None, None, self.treasury.fx_treasury, self.treasury.bankers_usance), TreasuryFocus.CREDIT_LINE_CAPACITY),
+            (TreasuryReviewContext(None, None, self.treasury.fx_treasury, self.treasury.bankers_usance), TreasuryFocus.FUNDING_OPTIONS),
+            (TreasuryReviewContext(None, self.treasury.company_funding, None, self.treasury.bankers_usance), TreasuryFocus.FX_EXPOSURE),
+            (TreasuryReviewContext(None, self.treasury.company_funding, None, self.treasury.bankers_usance), TreasuryFocus.FORWARD_HEDGE),
+            (TreasuryReviewContext(None, self.treasury.company_funding, self.treasury.fx_treasury, None), TreasuryFocus.BANKERS_USANCE),
         )
-        for treasury, signal in cases:
-            with self.subTest(signal=signal):
+        for treasury, focus in cases:
+            with self.subTest(focus=focus):
                 client = FakeClient(
-                    final_memo=memo(
-                        key_signals=(ReviewSignal.COMBINED_STRESS, signal)
+                    final_memo=legacy_only_memo().model_copy(
+                        update={"treasury_focus": focus}
                     )
                 )
                 with self.assertRaises(DealReviewError):
                     self.invoke(client, treasury=treasury)
 
-    def test_fully_loaded_treasury_requires_a_treasury_signal(self):
-        with self.assertRaises(DealReviewError):
-            self.invoke(FakeClient(final_memo=legacy_only_memo()))
-
-    def test_partially_loaded_treasury_requires_a_treasury_signal(self):
-        partial = TreasuryReviewContext(
-            None, self.treasury.company_funding, None, None
+    def test_optional_context_absence_cannot_break_structured_output(self):
+        without_optional = canonical_treasury(
+            self.deal, self.fx, include_profile=False
         )
-        with self.assertRaises(DealReviewError):
-            self.invoke(
-                FakeClient(final_memo=legacy_only_memo()), treasury=partial
-            )
-
-    def test_fully_loaded_treasury_accepts_an_available_signal(self):
-        result = self.invoke(FakeClient())
-        self.assertIn(ReviewSignal.CREDIT_LINE_CAPACITY, result.memo.key_signals)
-
-    def test_partially_loaded_treasury_accepts_a_matching_signal(self):
-        partial = TreasuryReviewContext(
-            None, self.treasury.company_funding, None, None
-        )
-        result = self.invoke(FakeClient(), treasury=partial)
-        self.assertIn(ReviewSignal.CREDIT_LINE_CAPACITY, result.memo.key_signals)
-
-    def test_empty_treasury_accepts_legacy_only_signals(self):
-        empty = TreasuryReviewContext(None, None, None, None)
         result = self.invoke(
-            FakeClient(final_memo=legacy_only_memo()), treasury=empty
+            FakeClient(final_memo=legacy_only_memo()),
+            treasury=without_optional,
+            payment=None,
         )
-        self.assertEqual(result.memo.key_signals, legacy_only_memo().key_signals)
+        self.assertEqual(
+            result.memo.supporting_signals,
+            legacy_only_memo().supporting_signals,
+        )
+
+    def test_loaded_optional_context_does_not_change_memo_contract(self):
+        result = self.invoke(
+            FakeClient(final_memo=legacy_only_memo()),
+            payment=payment_context(),
+        )
+        self.assertEqual(
+            set(DealReviewMemo.model_fields),
+            {
+                "headline",
+                "summary",
+                "treasury_focus",
+                "supporting_signals",
+                "negotiation_focus",
+            },
+        )
 
     def test_input_state_is_not_mutated(self):
         original = (self.deal, self.fx, self.rescue)

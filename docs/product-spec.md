@@ -1129,14 +1129,20 @@ read-only evidence tools: current Deal analysis, Stress / Rescue, Treasury
 context, and K-SURE context. The Treasury tool only serializes supplied T1–T4
 results; it performs no calculation or external fetch.
 
-A successful run uses exactly two model requests. The Agent never fetches
+A successful run uses exactly two model requests and no retry. The Agent never fetches
 external data, calculates authoritative financial values, mutates the Deal,
 executes finance, or stores conversation history. Its immutable current-state
 snapshot includes Treasury context, so a Treasury input or result change makes
 an older memo stale and restoring the exact state makes it current again.
 This role and its Treasury integration are implemented and frozen.
-When Treasury evidence is available, post-parse validation requires a successful
-memo to select at least one available Treasury ReviewSignal.
+The structured memo requires exactly one currently available `treasury_focus`
+from credit-line capacity, funding options, FX exposure, forward hedge, or
+Banker's Usance. This is a review topic, not a recommendation.
+`supporting_signals` contains one to three always-available Deal-analysis signals
+and cannot select Treasury, Company Liquidity, or K-SURE values. Optional Company
+Liquidity and K-SURE context are rendered deterministically when loaded rather
+than exposed as runtime-dependent structured-output choices. Authoritative
+numbers remain deterministic.
 
 AI-generated prose does not restate authoritative numeric values. The Web MVP
 renders selected signals and negotiation topics from current deterministic

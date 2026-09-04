@@ -12,8 +12,9 @@ from streamlit.testing.v1 import AppTest
 from src.ai.deal_review import (
     DealReviewMemo,
     DealReviewRun,
-    ReviewSignal,
+    SupportingSignal,
     TOOL_NAMES,
+    TreasuryFocus,
     TreasuryReviewContext,
 )
 from src.ai.financialization import (
@@ -161,17 +162,15 @@ def review_result(payment_context=None, treasury_context=None):
         memo=DealReviewMemo(
             headline="복합 상황에서 계약조건 점검이 필요합니다",
             summary="가격과 원가 경계를 함께 읽고 자금 부담의 원인을 확인해야 합니다.",
-            key_signals=(
-                ReviewSignal.COMBINED_STRESS,
-                ReviewSignal.CREDIT_LINE_CAPACITY,
-                ReviewSignal.FORWARD_HEDGE,
-                ReviewSignal.BANKERS_USANCE,
+            treasury_focus=TreasuryFocus.CREDIT_LINE_CAPACITY,
+            supporting_signals=(
+                SupportingSignal.COMBINED_STRESS,
+                SupportingSignal.FX_RESILIENCE,
             ),
             negotiation_focus=(
                 RescueLever.SALE_AMOUNT_USD,
                 RescueLever.COLLECTION_DAY,
             ),
-            payment_context_note=None,
         ),
         deal=reference_deal(),
         fx=reference_fx(),
@@ -507,6 +506,19 @@ class WebMvpTests(unittest.TestCase):
             app.run()
         review.assert_not_called()
 
+    def test_invalid_required_treasury_input_blocks_agent_before_openai(self):
+        app, _, _, _ = self.render_without_credentials(
+            {
+                "운전자금 한도 총액": 20000000.0,
+                "현재 사용액": 30000000.0,
+            }
+        )
+        run_button = element_by_key(app.button, "run_deal_review")
+        self.assertTrue(run_button.disabled)
+        self.last_deal_review.assert_not_called()
+        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
+        self.assertIn("Treasury 입력", visible)
+
     def test_explicit_agent_cta_renders_current_deterministic_evidence_and_trace(self):
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
@@ -525,15 +537,16 @@ class WebMvpTests(unittest.TestCase):
             for item in (*app.markdown, *app.info, *app.warning)
         )
         self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
+        self.assertIn("먼저 확인할 Treasury 이슈", visible)
+        self.assertIn("함께 본 근거", visible)
         self.assertIn("마진 8.83% · 목표 미달", visible)
-        self.assertIn("최소 USD 106,017", visible)
+        self.assertIn("운전자금 한도 수용력", visible)
+        self.assertEqual(visible.count("운전자금 한도 수용력"), 1)
+        self.assertIn("현재 1,400.00원", visible)
         self.assertIn("현재 거래 분석", visible)
         self.assertIn("Stress / 조건 역산", visible)
         self.assertIn("회사 자금 / 자금조달 / 외화위험", visible)
         self.assertIn("K-SURE Context 확인 · 불러온 공식 데이터 없음", visible)
-        self.assertIn("복합 Stress: 필요 7,030만원", visible)
-        self.assertIn("overlay 13.82%", visible)
-        self.assertIn("은행 신용 원금 피크 6,900만원", visible)
 
     def test_changed_deal_marks_agent_result_stale_without_another_call(self):
         with (
@@ -631,12 +644,9 @@ class WebMvpTests(unittest.TestCase):
             memo=DealReviewMemo(
                 headline="회사 자금 맥락을 함께 확인합니다",
                 summary="재무제표상 현금과 거래 배정자금의 차이를 구분해 봐야 합니다.",
-                key_signals=(
-                    ReviewSignal.COMPANY_LIQUIDITY,
-                    ReviewSignal.CREDIT_LINE_CAPACITY,
-                ),
+                treasury_focus=TreasuryFocus.CREDIT_LINE_CAPACITY,
+                supporting_signals=(SupportingSignal.COMBINED_STRESS,),
                 negotiation_focus=(),
-                payment_context_note=None,
             ),
         )
         with (
@@ -663,6 +673,41 @@ class WebMvpTests(unittest.TestCase):
         )
         self.assertIn("재무제표상 현금 및 현금성자산", visible)
         self.assertIn("재무제표상 현금은 Deal 투입가능자금과 동일하지 않습니다", visible)
+
+    def test_loaded_ksure_context_renders_automatically_after_agent_result(self):
+        context = PaymentContext(
+            country_code="450",
+            industry_major_code="29",
+            last_update_date=date(2026, 8, 1),
+            reference_year=2025,
+            average_payment_period_days=Decimal("62.4"),
+            late_payment_rate_percent=Decimal("8.1"),
+            average_late_payment_period_days=Decimal("13.7"),
+            payment_terms=(),
+            payment_period_distribution=(),
+        )
+        loaded_run = review_result(payment_context=context)
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch("src.ai.deal_review.run_deal_review", return_value=loaded_run) as review,
+            patch("src.external.ksure_payment.fetch_payment_context") as fetch,
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            app.session_state["ksure_payment_context"] = context
+            app.run()
+            element_by_key(app.button, "run_deal_review").click()
+            app.run()
+
+        review.assert_called_once()
+        fetch.assert_not_called()
+        visible = "\n".join(
+            item.value for item in (*app.markdown, *app.info, *app.warning)
+        )
+        self.assertIn("공식 결제 참고정보", visible)
+        self.assertIn("평균 결제기간 62.4일", visible)
+        self.assertIn("개별 바이어 예측 아님", visible)
 
     def test_loaded_ksure_context_is_available_without_agent_or_ksure_fetch(self):
         context = PaymentContext(

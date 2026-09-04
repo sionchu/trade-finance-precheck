@@ -48,9 +48,13 @@ implement a full L/C / UPAS workflow.
 The Single Deal Review Agent reads current evidence through exactly four local
 read-only tools: current Deal analysis, Stress / Rescue, already-computed
 Treasury context, and already-loaded K-SURE context. It uses exactly two model
-requests, performs no authoritative calculation or external fetch, and treats
-Treasury context as part of result freshness. Numeric evidence remains rendered
-from deterministic application state.
+requests without retry, performs no authoritative calculation or external fetch,
+and treats Treasury, Company Liquidity, and K-SURE context as part of result
+freshness. Its structured memo selects one currently available Treasury review
+focus while `supporting_signals` contains only always-available Deal-analysis
+evidence. Optional Company Liquidity and K-SURE context are rendered
+deterministically when loaded, not selected by the model. Numeric evidence
+remains rendered from deterministic application state.
 
 The current authorized gate is **T6 — Presentation IA RE0 / Report / Submission
 Final Freeze**.
