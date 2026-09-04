@@ -233,6 +233,8 @@ class WebMvpTests(unittest.TestCase):
             "AI 거래 검토 에이전트",
             "회사 자금으로 대금 회수일까지 버틸 수 있을까요?",
             "부족한 돈은 어떻게 메울까요?",
+            "외화는 어느 방향으로 위험할까요?",
+            "환율을 열어둘까, 일부 고정할까?",
             "공식 시장 참고정보",
             "분석 근거",
             "결과를 공유해야 하나요?",
@@ -324,6 +326,48 @@ class WebMvpTests(unittest.TestCase):
         )
         visible = "\n".join(item.value for item in (*app.markdown, *app.error))
         self.assertGreaterEqual(visible.count("**부족**  900만원"), 2)
+
+    def test_fx_treasury_positions_and_hedge_overlay_are_visible(self):
+        app, _, _, _ = self.render_without_credentials()
+        headings = [item.value for item in app.subheader]
+        self.assertIn("외화는 어느 방향으로 위험할까요?", headings)
+        self.assertIn("환율을 열어둘까, 일부 고정할까?", headings)
+        input_labels = [item.label for item in app.number_input]
+        for label in (
+            "USD 선물환 매도환율",
+            "USD 헤지비율 (%)",
+            "JPY 선물환 매수환율 (100 JPY)",
+            "JPY 헤지비율 (%)",
+            "정산 시 가정 USD/KRW",
+            "정산 시 가정 JPY/KRW (100 JPY)",
+        ):
+            self.assertIn(label, input_labels)
+        visible = "\n".join(
+            item.value
+            for item in (
+                *app.markdown,
+                *app.caption,
+                *app.warning,
+                *app.success,
+                *app.error,
+            )
+        )
+        self.assertIn("**통화 기준 상계 가능액**  USD 20,000", visible)
+        self.assertIn("**순수취 노출**  USD 80,000", visible)
+        self.assertIn("**순지급 노출**  JPY 3,000,000", visible)
+        self.assertIn("USD 지급 D+30 · 수취 D+90", visible)
+        self.assertIn("**고정한 금액**  USD 64,000", visible)
+        self.assertIn("**남은 노출**  USD 16,000", visible)
+        self.assertIn("**고정한 금액**  JPY 2,400,000", visible)
+        self.assertIn("**남은 노출**  JPY 600,000", visible)
+        self.assertIn("**선물환 정산효과**  -44만원", visible)
+        self.assertIn("**선물환 정산효과**  +620만원", visible)
+        self.assertIn("**헤지 전 마진**  9.16%", visible)
+        self.assertIn("**선물환 overlay 마진**  13.82%", visible)
+        self.assertIn("현재 입력 기준 · 목표 미달", visible)
+        self.assertIn("파생상품 정산에 따른 차입일정 재계산은 포함하지 않습니다", visible)
+        self.last_statement_extract.assert_not_called()
+        self.last_deal_review.assert_not_called()
 
     def test_explicit_statement_cta_renders_normalized_profile_without_changing_deal_cash(self):
         with (

@@ -18,6 +18,7 @@ FROZEN / IMPLEMENTED:
 • Trade Document Financialization
 • Financial Statement Financialization / Company Liquidity Profile
 • Company Liquidity & Funding Choice
+• FX Treasury / Forward Hedge Simulation
 • Single Deal Review Agent
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
@@ -30,7 +31,7 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• T3 — FX Treasury / Forward Hedge Simulation
+• T4 — Banker's Usance
 
 DEFERRED:
 
@@ -72,7 +73,7 @@ B. Company Liquidity — authorized Treasury scope
 • funding capacity and liquidity gap
 • deterministic funding-choice comparison
 
-C. FX Treasury — authorized Treasury scope
+C. FX Treasury — implemented and frozen
 
 • currency-level receivables and payables
 • natural offset and open net exposure
@@ -91,8 +92,8 @@ Financial Engine v0.1 includes:
 • O/A receivable early-purchase simulation
 • FX / rate / payment-delay stress
 
-Insurance and guarantee execution remain deferred. Forward-hedge simulation is
-authorized only for T3 and does not predict or execute an FX transaction.
+Insurance and guarantee execution remain deferred. The frozen forward-hedge
+simulation does not predict or execute an FX transaction.
 
 ────────
 
@@ -1421,7 +1422,7 @@ document-discrepancy handling, or acceptance / negotiation bank workflows.
 
 ────────
 
-26. FX Treasury / Forward Hedge Simulation — T3
+26. Frozen Gate — FX Treasury / Forward Hedge Simulation
 
 Exposure is classified per currency, not by labeling the company simply as an
 exporter or importer:
@@ -1431,13 +1432,16 @@ Net Exposure(currency)
 = receivables - payables
 ```
 
-For each currency, the Treasury layer derives natural offset, open exposure and
-the unfavorable FX direction. Positive net exposure is foreign-currency
+For each currency, the Treasury layer derives the amount-level natural offset,
+open exposure and the unfavorable FX direction. Matching receivable and payable
+amounts do not prove a timing-matched natural hedge; settlement timing risk may
+remain. Positive net exposure is foreign-currency
 receivable exposure; negative net exposure is foreign-currency payable
 exposure. The canonical Deal is mixed: USD is positive and JPY is negative.
 
 There is no FX forecast. A deterministic forward-hedge comparison accepts an
-actual or hypothetical bank quote supplied by the user and may use:
+actual or hypothetical bank quote and settlement spot supplied by the user and
+uses:
 
 • hedge ratio
 • hedge notional
@@ -1447,7 +1451,9 @@ actual or hypothetical bank quote supplied by the user and may use:
 • comparison with existing Stress results
 
 The simulation does not execute an FX transaction or state that hedging is
-universally better.
+universally better. The hedge profit/loss effect is an overlay on the frozen
+Financial Engine's financing-adjusted result. It does not recompute the Deal
+funding schedule with derivative settlement cash flows.
 
 ────────
 
@@ -1460,7 +1466,7 @@ universally better.
 5. T5 — Treasury integration into Single Deal Review Agent
 6. T6 — Presentation IA RE0 / Report / Submission Final Freeze
 
-The current authorized gate is T3. Later gates are defined boundaries, not
+The current authorized gate is T4. Later gates are defined boundaries, not
 authorization to implement them early.
 
 ────────

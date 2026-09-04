@@ -6,9 +6,9 @@ The canonical product definition is [docs/product-spec.md](docs/product-spec.md)
 
 ## Current state
 
-The repository contains the frozen Deal Economics and Company Liquidity foundation: deterministic
+The repository contains the frozen Deal Economics, Company Liquidity, and FX Treasury foundation: deterministic
 Financial Engine v0.1, Deal Rescue / Negotiation Solver, Company Liquidity &
-Funding Choice, Streamlit Web MVP and
+Funding Choice, Forward Hedge Simulation, Streamlit Web MVP and
 presentation layer, Trade Document Financialization, Financial Statement
 Financialization with a normalized Company Liquidity Profile, the bounded
 read-only Single Deal Review Agent, public K-SURE aggregate payment context, and
@@ -33,7 +33,13 @@ existing credit line, and O/A receivable early purchase. The Deal's existing
 annual funding rate remains the borrowing-rate source; financial-statement cash
 never replaces Deal-specific available cash.
 
-The current authorized gate is **T3 — FX Treasury / Forward Hedge Simulation**.
+FX Treasury classifies USD and JPY exposure separately, distinguishes an
+amount-level natural offset from timing alignment, and compares user-supplied
+forward quotes at user-supplied settlement spots. It does not forecast or
+execute FX. Its hedge profit/loss overlay does not recompute the Deal funding
+schedule for derivative settlement cash flows.
+
+The current authorized gate is **T4 — Banker's Usance**.
 
 The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
 Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4

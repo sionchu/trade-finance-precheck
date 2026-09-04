@@ -48,6 +48,13 @@ from src.finance.engine import (
     evaluate_deal,
     solve_usd_krw_threshold,
 )
+from src.finance.fx_treasury import (
+    ForwardAction,
+    ForwardHedgeInput,
+    FxExposureDirection,
+    analyze_fx_treasury,
+    build_currency_exposure_positions,
+)
 from src.finance.liquidity import (
     FundingChoice,
     FundingChoiceStatus,
@@ -108,6 +115,12 @@ def optional_krw_consumer(value: Decimal | None) -> str:
         return "확인 필요"
     if value < 0:
         return f"-{krw_consumer(abs(value))}"
+    return krw_consumer(value)
+
+
+def signed_krw_consumer(value: Decimal) -> str:
+    if value > 0:
+        return f"+{krw_consumer(value)}"
     return krw_consumer(value)
 
 
@@ -1194,6 +1207,166 @@ if credit_line is not None:
         "T2의 추가 한도 수수료는 자금조달 비교 비용에 포함되며 "
         "기존 Deal Margin 엔진에는 자동 반영하지 않습니다."
     )
+
+st.subheader("외화는 어느 방향으로 위험할까요?")
+st.badge("통화별 결정론적 노출", color="blue")
+st.write(
+    "같은 통화의 받을 돈과 낼 돈을 금액 기준으로 상계합니다. "
+    "지급일과 수취일이 다르면 시점 위험은 별도로 남습니다."
+)
+fx_positions = build_currency_exposure_positions(deal)
+position_columns = st.columns(2)
+for column, position in zip(position_columns, fx_positions):
+    currency = position.currency.value
+    with column.container(border=True):
+        st.markdown(f"#### {currency} 노출")
+        st.write(f"**받을 외화**  {currency} {position.receivable_amount:,.0f}")
+        st.write(f"**지급할 외화**  {currency} {position.payable_amount:,.0f}")
+        st.write(f"**통화 기준 상계 가능액**  {currency} {position.amount_offset:,.0f}")
+        if position.direction is FxExposureDirection.RECEIVABLE:
+            st.write(f"**순수취 노출**  {currency} {position.open_exposure:,.0f}")
+            st.warning(f"불리한 방향: {currency}/KRW 하락")
+        elif position.direction is FxExposureDirection.PAYABLE:
+            st.write(f"**순지급 노출**  {currency} {position.open_exposure:,.0f}")
+            st.warning(f"불리한 방향: {currency}/KRW 상승")
+        else:
+            st.write("**순노출**  없음")
+            st.info("불리한 방향: 없음")
+
+usd_position = fx_positions[0]
+usd_payment_days = tuple(
+    payable.payment_day
+    for payable in deal.foreign_payables
+    if payable.currency is Currency.USD and payable.amount > 0
+)
+if (
+    usd_position.amount_offset > 0
+    and deal.sale.currency is Currency.USD
+    and usd_payment_days
+    and any(day != deal.sale.collection_day for day in usd_payment_days)
+):
+    st.caption(
+        f"USD 지급 D+{min(usd_payment_days)} · 수취 D+{deal.sale.collection_day} — "
+        "금액은 상계되지만 시점은 다릅니다."
+    )
+
+st.subheader("환율을 열어둘까, 일부 고정할까?")
+st.badge("선물환 시뮬레이션 · 실행 아님", color="orange")
+st.caption(
+    "기존 Stress는 계약 전체 가정이고, 아래 선물환 비교는 사용자가 입력한 "
+    "정산환율 기준입니다."
+)
+forward_columns = st.columns(2)
+usd_forward = forward_columns[0].number_input(
+    "USD 선물환 매도환율",
+    min_value=0.01,
+    value=1395.0,
+    step=1.0,
+    key="usd_forward_quote_input",
+)
+usd_hedge_percent = forward_columns[0].number_input(
+    "USD 헤지비율 (%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=80.0,
+    step=5.0,
+    key="usd_hedge_ratio_input",
+)
+jpy_forward = forward_columns[1].number_input(
+    "JPY 선물환 매수환율 (100 JPY)",
+    min_value=0.01,
+    value=905.0,
+    step=1.0,
+    key="jpy_forward_quote_input",
+)
+jpy_hedge_percent = forward_columns[1].number_input(
+    "JPY 헤지비율 (%)",
+    min_value=0.0,
+    max_value=100.0,
+    value=80.0,
+    step=5.0,
+    key="jpy_hedge_ratio_input",
+)
+settlement_columns = st.columns(2)
+settlement_usd = settlement_columns[0].number_input(
+    "정산 시 가정 USD/KRW",
+    min_value=0.01,
+    value=1330.0,
+    step=1.0,
+    key="settlement_usd_krw_input",
+)
+settlement_jpy = settlement_columns[1].number_input(
+    "정산 시 가정 JPY/KRW (100 JPY)",
+    min_value=0.01,
+    value=990.0,
+    step=1.0,
+    key="settlement_jpy_krw_input",
+)
+st.caption("데모 가정 · 실제 은행 선물환 quote 아님 · 정산환율은 미래 예측 아님")
+
+fx_treasury = analyze_fx_treasury(
+    deal=deal,
+    current_fx=fx,
+    settlement_fx=FxRates(
+        usd_krw=decimal_from_widget(settlement_usd),
+        jpy_krw_per_100=decimal_from_widget(settlement_jpy),
+    ),
+    hedge_inputs=(
+        ForwardHedgeInput(
+            Currency.USD,
+            decimal_from_widget(usd_hedge_percent) / Decimal("100"),
+            decimal_from_widget(usd_forward),
+        ),
+        ForwardHedgeInput(
+            Currency.JPY,
+            decimal_from_widget(jpy_hedge_percent) / Decimal("100"),
+            decimal_from_widget(jpy_forward),
+        ),
+    ),
+)
+hedge_columns = st.columns(2)
+for column, hedge in zip(hedge_columns, fx_treasury.settlement_scenario_hedges):
+    currency = hedge.currency.value
+    action = {
+        ForwardAction.SELL: "선물환 매도 시뮬레이션",
+        ForwardAction.BUY: "선물환 매수 시뮬레이션",
+        ForwardAction.NONE: "선물환 방향 없음",
+    }[hedge.action]
+    with column.container(border=True):
+        st.markdown(f"#### {currency} 일부 고정")
+        st.write(f"**열린 노출**  {currency} {hedge.open_exposure:,.0f}")
+        st.write(f"**고정한 금액**  {currency} {hedge.hedged_notional:,.0f}")
+        st.write(f"**남은 노출**  {currency} {hedge.residual_exposure:,.0f}")
+        st.write(f"**방향**  {action}")
+
+comparison_columns = st.columns(2)
+for column, title, overlay in (
+    (
+        comparison_columns[0],
+        "현재 환율이 유지되는 경우",
+        fx_treasury.current_spot_overlay,
+    ),
+    (
+        comparison_columns[1],
+        "사용자가 입력한 가정환율",
+        fx_treasury.settlement_scenario_overlay,
+    ),
+):
+    meets_overlay_target = overlay.simulated_margin_after_hedge >= deal.target_margin
+    with column.container(border=True):
+        st.markdown(f"#### {title}")
+        st.write(f"**헤지 전 마진**  {percent(overlay.unhedged_margin)}")
+        st.write(f"**선물환 overlay 마진**  {percent(overlay.simulated_margin_after_hedge)}")
+        st.write(f"**선물환 정산효과**  {signed_krw_consumer(overlay.hedge_effect_krw)}")
+        st.write(f"**목표마진**  {percent(deal.target_margin)}")
+        if meets_overlay_target:
+            st.success("현재 입력 기준 · ✓ 목표 충족")
+        else:
+            st.error("현재 입력 기준 · 목표 미달")
+st.caption(
+    "선물환 정산효과는 거래손익 비교에 반영하며, "
+    "파생상품 정산에 따른 차입일정 재계산은 포함하지 않습니다."
+)
 
 st.subheader("공식 시장 참고정보")
 st.write(
