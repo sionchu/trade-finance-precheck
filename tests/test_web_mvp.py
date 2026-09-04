@@ -275,6 +275,7 @@ class WebMvpTests(unittest.TestCase):
             "조건이 나빠지면 어떻게 될까요?",
             "이 거래를 목표 수준으로 만들려면?",
             "회사 자금으로 대금 회수일까지 버틸 수 있을까요?",
+            "회사의 실제 자금 흐름을 확인합니다",
             "부족한 돈은 어떻게 메울까요?",
             "수입대금 지급을 은행 신용으로 늦춰보면?",
             "외화는 어느 방향으로 위험할까요?",
@@ -286,6 +287,42 @@ class WebMvpTests(unittest.TestCase):
         ]
         positions = [headings.index(label) for label in expected_order]
         self.assertEqual(positions, sorted(positions))
+
+    def test_company_cash_plan_timeline_is_visible_and_confirmed_only(self):
+        app, _, _, _ = self.render_without_credentials()
+        headings = [item.value for item in app.subheader]
+        self.assertIn("회사의 실제 자금 흐름을 확인합니다", headings)
+        self.assertEqual([item.label for item in app.tabs], ["직접 입력", "ERP 파일 가져오기"])
+        self.assertFalse(
+            next(
+                item
+                for item in app.checkbox
+                if item.label == "EXPECTED 자금계획 포함 시나리오 보기"
+            ).value
+        )
+        metrics = {item.label: item.value for item in app.metric}
+        self.assertEqual(metrics["현재 가용현금"], "1억 2,000만원")
+        self.assertEqual(metrics["최소 운영자금"], "7,000만원")
+        self.assertEqual(metrics["현재 Buffer 초과 유동성"], "+5,000만원")
+        self.assertEqual(metrics["거래만 본 필요 은행자금"], "6,900만원")
+        self.assertEqual(
+            metrics["회사 기존 자금계획까지 포함한 필요 은행자금"],
+            "8,900만원",
+        )
+        self.assertEqual(metrics["현재 미사용 운전자금 한도"], "7,000만원")
+        visible = "\n".join(
+            item.value
+            for item in (*app.markdown, *app.caption, *app.info, *app.error)
+        )
+        for text in (
+            "가상·데모·fictional 자금계획",
+            "실시간 ERP 연결이 아닙니다",
+            "기본 결과는 CONFIRMED만 포함합니다",
+            "현재 입력 한도 초과 · 한도 부족 1,900만원",
+            "2026-11-03 (D+60)",
+            "Deal-level 배정자금과 Company-wide 현금 포지션",
+        ):
+            self.assertIn(text, visible)
 
     def test_canonical_rescue_boundaries_are_visible(self):
         app, _, _, _ = self.render_without_credentials()
@@ -742,7 +779,10 @@ class WebMvpTests(unittest.TestCase):
         self.assertIn("K-SURE 결제정보 불러오기", button_labels)
         self.assertNotIn("공식 기준환율 불러오기", button_labels)
         self.assertNotIn("현재 거래에 적용", button_labels)
-        self.assertEqual(len(app.date_input), 0)
+        self.assertEqual(
+            [item.label for item in app.date_input],
+            ["거래 검토 기준일"],
+        )
 
     def test_collection_day_updates_receivable_comparison_label(self):
         app, _, _, _ = self.render_without_credentials({"결제일 (D+)": 120})
@@ -773,7 +813,7 @@ class WebMvpTests(unittest.TestCase):
     def test_missing_credentials_do_not_prevent_deterministic_analysis(self):
         app, _, _, _ = self.render_without_credentials()
         self.assertTrue(any("목표 충족" in message.value for message in app.success))
-        self.assertEqual(len(app.dataframe), 2)
+        self.assertEqual(len(app.dataframe), 4)
 
     def test_ai_section_safely_reports_missing_key(self):
         app, _, _, _ = self.render_without_credentials()

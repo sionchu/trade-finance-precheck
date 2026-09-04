@@ -56,13 +56,21 @@ evidence. Optional Company Liquidity and K-SURE context are rendered
 deterministically when loaded, not selected by the model. Numeric evidence
 remains rendered from deterministic application state.
 
-The current authorized gate is **T6 — Presentation IA RE0 / Report / Submission
-Final Freeze**.
+The current authorized gate is **T6 — Final Product Completion / Presentation IA
+RE0 / Report / Submission Freeze**. T6-A is implemented and frozen: its
+company-wide liquidity timeline combines Treasury-confirmed current cash,
+existing confirmed cash-plan events, and the prospective Deal's frozen dated
+cashflows. The next authorized slice is T6-B — React Experience Shell.
 
 The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
 Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4
 Banker's Usance, T5 Treasury integration into the Single Deal Review Agent, and
-T6 Presentation IA RE0 / Report / Submission Final Freeze.
+T6 Final Product Completion / Presentation IA RE0 / Report / Submission Freeze.
+
+T6-A accepts direct company cash-plan editing or a standard synthetic CSV export
+path. ERP products such as SAP S/4HANA or 더존 may export the source file, but the
+MVP does not claim a live ERP connection. Calendar dates resolve from a
+user-selected trade review date; the frozen Deal Engine retains its D+n model.
 
 ## Scope
 

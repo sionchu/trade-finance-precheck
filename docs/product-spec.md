@@ -21,6 +21,7 @@ FROZEN / IMPLEMENTED:
 • FX Treasury / Forward Hedge Simulation
 • Banker's Usance
 • Single Deal Review Agent with Treasury context
+• T6-A Company Liquidity Timeline
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
 • Public Streamlit deployment
@@ -32,7 +33,8 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• T6 — Presentation IA RE0 / Report / Submission Final Freeze
+• T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze
+• Next authorized slice: T6-B — React Experience Shell
 
 DEFERRED:
 
@@ -118,7 +120,7 @@ These facts are often split across contracts, invoices, spreadsheets, ERP, banks
 
 Canonical Question
 
-> **“이 거래를 우리 회사가 감당할 수 있는가? 부족한 자금은 어떻게 메우고, 외화위험은 어디까지 관리해야 하는가?”**
+> **“이 거래가 돈을 필요로 하는 시점에 회사의 실제 가용 유동성이 버틸 수 있는가?”**
 
 English concept: **Company-aware Trade Treasury Pre-check**
 
@@ -1230,7 +1232,7 @@ Unless this spec is explicitly revised, do not implement:
 • real guarantee application
 • factoring platform
 • forfaiting workflow
-• ERP integration
+• live ERP replacement or vendor-specific direct integration
 • user authentication
 • portfolio database
 • multiple companies
@@ -1492,10 +1494,21 @@ funding schedule with derivative settlement cash flows.
 3. T3 — FX Treasury / Forward Hedge Simulation
 4. T4 — Banker's Usance
 5. T5 — Treasury integration into Single Deal Review Agent
-6. T6 — Presentation IA RE0 / Report / Submission Final Freeze
+6. T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze
 
-The current authorized gate is T6. Earlier Treasury gates are implemented and
-frozen.
+T6 authorizes:
+
+• T6-A Company Liquidity Timeline
+• manual company cash-plan input
+• ERP CSV export-file import
+• calendar-date company cash events
+• prospective Deal cashflow overlay
+• later React Experience Shell
+• later Agent UX orchestration
+• later report and submission finalization
+
+T1–T5 and T6-A are implemented and frozen. The next authorized slice is T6-B —
+React Experience Shell. No separate T7 is defined.
 
 ────────
 
@@ -1520,3 +1533,104 @@ The following remain deferred:
 • buyer default prediction
 • database and authentication
 • EUR/CNY engine expansion
+
+────────
+
+30. T6-A — Company Liquidity Timeline
+
+Product positioning:
+
+```text
+기업 수출거래 Treasury 사전점검
+Company-aware Trade Treasury Pre-check
+```
+
+The primary user is an export/import SME or mid-sized company's finance or
+Treasury practitioner. The result may support preparation for discussion with a
+Corporate RM, Transaction Banking, Trade Finance, or FX desk. It is not bank
+credit approval, bank L/C operations software, an ERP/TMS replacement, or an
+accounting system.
+
+T6-A introduces a user-selected `as_of_date`. D0 means the current trade review
+date, not universally the contract, shipment, invoice, or delivery date. The
+frozen Deal Engine keeps integer D+n semantics. Deal events are resolved by:
+
+```text
+event_date = as_of_date + timedelta(days=deal_day)
+```
+
+Document AI timing anchors remain separate. If document facts and user
+confirmation cannot resolve an actual date, the product does not invent one.
+
+Canonical company liquidity input:
+
+```text
+as_of_date
+current_available_cash_krw
+minimum_operating_cash_krw
+existing_cash_events
+include_expected_events
+```
+
+`current_available_cash_krw` is currently usable cash confirmed by Treasury. It
+is not financial-statement cash and does not replace frozen
+`DealCase.available_cash_krw`. The raw current-cash-minus-buffer difference is
+retained; the displayed starting surplus is floored at zero.
+
+Existing company cash events have a calendar date, category, signed KRW amount,
+CONFIRMED/EXPECTED status, MANUAL/ERP_IMPORT source, and non-empty reference.
+Positive amounts are inflows and negative amounts are outflows. Authoritative
+base calculation includes CONFIRMED events only. EXPECTED events remain visible
+and enter calculation only through an explicitly enabled scenario; they are not
+called forecasts, predictions, or AI estimates.
+
+The prospective Deal must not be duplicated in the company cash plan. Its events
+come exclusively from frozen `dated_cashflows(deal, fx)` and are overlaid with
+existing company events. At each event date:
+
+```text
+projected company cash
+= existing company cashflow + prospective Deal cashflow
+
+required external funding
+= max(0, minimum operating cash - projected company cash)
+```
+
+The timeline reports projected cash, surplus after buffer, required external
+funding, minimum projected cash/date, peak liquidity gap/date, and ending cash.
+A comparison separates the company's gap without the Deal from the gap with the
+Deal and reports the incremental peak gap caused by the Deal.
+
+Canonical demo uses 2026-09-04, currently usable cash KRW 120,000,000, minimum
+operating cash KRW 70,000,000, and these existing company events only:
+
+• 2026-09-24 confirmed AR collection +40,000,000
+• 2026-10-04 confirmed payroll/tax -50,000,000
+• 2026-10-19 confirmed AR collection +20,000,000
+• 2026-10-29 expected AR collection +30,000,000
+• 2026-11-03 confirmed CAPEX payment -30,000,000
+
+The confirmed-only company plan without the Deal ends at KRW 100,000,000 and
+has no buffer gap. With the canonical prospective Deal, projected cash reaches
+KRW -19,000,000 and the peak liquidity gap is KRW 89,000,000 on 2026-11-03
+(D+60). The Deal therefore adds KRW 89,000,000 of peak gap. Against the canonical
+KRW 70,000,000 unused ordinary working-capital line, the company-wide timeline
+has a KRW 19,000,000 residual gap. These are deterministic demo results, not
+bank-approval predictions.
+
+Manual input and a standard CSV import share the same `CompanyCashEvent`
+contract. Canonical CSV columns are:
+
+```text
+event_date,category,amount_krw,status,reference
+```
+
+The imported source is normalized to `ERP_IMPORT`. The bundled CSV is synthetic,
+fictional demo data. “ERP 파일 가져오기” means importing a standard export file
+from systems such as SAP S/4HANA or 더존; it does not claim live connectivity.
+Future direct ERP APIs are adapters to this same canonical input. T6-A supports
+CSV only and adds no spreadsheet or ERP dependency.
+
+The Single Deal Review Agent and deterministic PDF report remain frozen in
+T6-A. Timeline integration belongs to later T6 slices. T6-A is implemented and
+frozen; the next authorized slice is T6-B — React Experience Shell.

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 import os
 from pathlib import Path
@@ -50,6 +50,16 @@ from src.finance.engine import (
     evaluate_deal,
     solve_usd_krw_threshold,
 )
+from src.finance.company_liquidity import (
+    CompanyCashEvent,
+    CompanyCashEventCategory,
+    CompanyCashEventSource,
+    CompanyCashEventStatus,
+    CompanyLiquidityInput,
+    analyze_company_liquidity,
+    compare_company_gap_to_credit_line,
+    parse_company_cash_events_csv,
+)
 from src.finance.fx_treasury import (
     ForwardAction,
     ForwardHedgeInput,
@@ -86,6 +96,47 @@ DEMO_PDF_PATHS = (
 )
 COMPANY_STATEMENT_PDF = (
     Path(__file__).parent / "assets" / "demo" / "Company_Financial_Statement.pdf"
+)
+COMPANY_CASH_PLAN_CSV = (
+    Path(__file__).parent / "assets" / "demo" / "Company_Cash_Plan_ERP_Export.csv"
+)
+
+CANONICAL_COMPANY_CASH_PLAN_ROWS = (
+    {
+        "예정일": date(2026, 9, 24),
+        "구분": "AR_COLLECTION",
+        "금액 (KRW)": 40000000.0,
+        "상태": "CONFIRMED",
+        "참조": "기존 매출채권 A",
+    },
+    {
+        "예정일": date(2026, 10, 4),
+        "구분": "PAYROLL_TAX",
+        "금액 (KRW)": -50000000.0,
+        "상태": "CONFIRMED",
+        "참조": "급여·세금",
+    },
+    {
+        "예정일": date(2026, 10, 19),
+        "구분": "AR_COLLECTION",
+        "금액 (KRW)": 20000000.0,
+        "상태": "CONFIRMED",
+        "참조": "기존 매출채권 B",
+    },
+    {
+        "예정일": date(2026, 10, 29),
+        "구분": "AR_COLLECTION",
+        "금액 (KRW)": 30000000.0,
+        "상태": "EXPECTED",
+        "참조": "예상 수금 C",
+    },
+    {
+        "예정일": date(2026, 11, 3),
+        "구분": "CAPEX",
+        "금액 (KRW)": -30000000.0,
+        "상태": "CONFIRMED",
+        "참조": "확정 설비대금",
+    },
 )
 
 
@@ -135,6 +186,40 @@ def krw_ten_thousands(value: Decimal) -> str:
 
 def decimal_text(value: Decimal | None, suffix: str = "") -> str:
     return "n/a" if value is None else f"{value}{suffix}"
+
+
+def company_cash_events_from_rows(rows) -> tuple[CompanyCashEvent, ...]:
+    events = []
+    for row in rows:
+        event_date = row.get("예정일")
+        if isinstance(event_date, datetime):
+            event_date = event_date.date()
+        elif isinstance(event_date, str):
+            event_date = date.fromisoformat(event_date)
+        events.append(
+            CompanyCashEvent(
+                event_date=event_date,
+                category=CompanyCashEventCategory(row.get("구분")),
+                amount_krw=decimal_from_widget(row.get("금액 (KRW)")),
+                status=CompanyCashEventStatus(row.get("상태")),
+                source=CompanyCashEventSource.MANUAL,
+                reference=str(row.get("참조", "")),
+            )
+        )
+    return tuple(events)
+
+
+def company_cash_rows(events) -> list[dict]:
+    return [
+        {
+            "예정일": item.event_date,
+            "구분": item.category.value,
+            "금액 (KRW)": float(item.amount_krw),
+            "상태": item.status.value,
+            "참조": item.reference,
+        }
+        for item in events
+    ]
 
 
 def apply_ai_proposal() -> None:
@@ -931,6 +1016,197 @@ else:
     st.metric("미사용 한도", krw_consumer(credit_line.unused_limit_krw))
 st.caption("데모 입력 · 실제 은행 승인 또는 신용평가 결과 아님")
 st.write("사용자가 입력한 기존 한도 기준이며 은행 승인 가능성을 예측하지 않습니다.")
+
+st.subheader("회사의 실제 자금 흐름을 확인합니다")
+st.badge("회사 유동성 Timeline · 현재 입력 기준", color="blue")
+st.write(
+    "현재 회사 유동성, 기존 확정 자금계획과 이 prospective Deal의 현금흐름을 "
+    "한 기준일 위에서 함께 봅니다."
+)
+st.caption(
+    "D0는 현재 거래 검토 기준일입니다. 계약일·선적일·송장일을 자동으로 뜻하지 않습니다."
+)
+company_liquidity_inputs = st.columns(3)
+company_as_of_date = company_liquidity_inputs[0].date_input(
+    "거래 검토 기준일",
+    value=date(2026, 9, 4),
+    key="company_liquidity_as_of_date",
+)
+company_current_cash = company_liquidity_inputs[1].number_input(
+    "현재 가용현금",
+    min_value=0.0,
+    value=120000000.0,
+    step=1000000.0,
+    key="company_current_available_cash",
+)
+company_minimum_cash = company_liquidity_inputs[2].number_input(
+    "최소 운영자금",
+    min_value=0.0,
+    value=70000000.0,
+    step=1000000.0,
+    key="company_minimum_operating_cash",
+)
+
+if "company_cash_plan_rows" not in st.session_state:
+    st.session_state["company_cash_plan_rows"] = [
+        dict(row) for row in CANONICAL_COMPANY_CASH_PLAN_ROWS
+    ]
+if "company_cash_plan_editor_version" not in st.session_state:
+    st.session_state["company_cash_plan_editor_version"] = 0
+
+manual_tab, erp_tab = st.tabs(["직접 입력", "ERP 파일 가져오기"])
+with manual_tab:
+    st.caption("이 prospective Deal을 제외한 기존 회사 자금계획만 입력합니다.")
+    edited_company_rows = st.data_editor(
+        st.session_state["company_cash_plan_rows"],
+        num_rows="dynamic",
+        hide_index=True,
+        width="stretch",
+        key=f"company_cash_plan_editor_{st.session_state['company_cash_plan_editor_version']}",
+        column_config={
+            "예정일": st.column_config.DateColumn("예정일", format="YYYY-MM-DD"),
+            "구분": st.column_config.SelectboxColumn(
+                "구분", options=[item.value for item in CompanyCashEventCategory]
+            ),
+            "금액 (KRW)": st.column_config.NumberColumn("금액 (KRW)", format="%.0f"),
+            "상태": st.column_config.SelectboxColumn(
+                "상태", options=[item.value for item in CompanyCashEventStatus]
+            ),
+            "참조": st.column_config.TextColumn("참조"),
+        },
+    )
+with erp_tab:
+    st.write("ERP 파일 가져오기")
+    st.caption(
+        "SAP S/4HANA, 더존 등 ERP에서 추출한 자금계획을 표준 형식으로 "
+        "가져오는 MVP 입력 경로입니다. 실시간 ERP 연결이 아닙니다."
+    )
+    st.caption("가상·데모·fictional 자금계획이며 실제 기업 자료가 아닙니다.")
+    st.download_button(
+        "샘플 ERP CSV 받기",
+        data=COMPANY_CASH_PLAN_CSV.read_bytes(),
+        file_name=COMPANY_CASH_PLAN_CSV.name,
+        mime="text/csv",
+        key="download_company_cash_plan_csv",
+    )
+    uploaded_cash_plan = st.file_uploader(
+        "표준 자금계획 CSV",
+        type=["csv"],
+        key="company_cash_plan_upload",
+    )
+    if st.button(
+        "가져온 자금계획 반영",
+        disabled=uploaded_cash_plan is None,
+        key="apply_company_cash_plan_upload",
+    ):
+        try:
+            imported_events = parse_company_cash_events_csv(
+                uploaded_cash_plan.getvalue().decode("utf-8-sig")
+            )
+        except (UnicodeDecodeError, ValueError):
+            st.session_state["company_cash_plan_import_message"] = (
+                "표준 CSV 형식과 입력값을 확인해 주세요."
+            )
+        else:
+            st.session_state["company_cash_plan_rows"] = company_cash_rows(imported_events)
+            st.session_state["company_cash_plan_editor_version"] += 1
+            st.session_state["company_cash_plan_import_message"] = (
+                f"{len(imported_events)}개 자금계획을 가져왔습니다."
+            )
+            st.rerun()
+    if import_message := st.session_state.get("company_cash_plan_import_message"):
+        st.info(import_message)
+
+include_expected_company_events = st.checkbox(
+    "EXPECTED 자금계획 포함 시나리오 보기",
+    value=False,
+    key="include_expected_company_events",
+)
+st.caption(
+    "기본 결과는 CONFIRMED만 포함합니다. EXPECTED는 선택할 때만 별도 입력 시나리오로 포함됩니다."
+)
+
+company_liquidity_comparison = None
+company_credit_capacity = None
+try:
+    company_cash_events = company_cash_events_from_rows(edited_company_rows)
+    company_liquidity_input = CompanyLiquidityInput(
+        as_of_date=company_as_of_date,
+        current_available_cash_krw=decimal_from_widget(company_current_cash),
+        minimum_operating_cash_krw=decimal_from_widget(company_minimum_cash),
+        existing_cash_events=company_cash_events,
+        include_expected_events=include_expected_company_events,
+    )
+    company_liquidity_comparison = analyze_company_liquidity(
+        liquidity_input=company_liquidity_input,
+        deal=deal,
+        fx=fx,
+    )
+    if credit_line is not None:
+        company_credit_capacity = compare_company_gap_to_credit_line(
+            company_liquidity_comparison.company_with_deal,
+            credit_line,
+        )
+except (TypeError, ValueError):
+    st.warning("회사 자금계획의 날짜, 구분, 금액, 상태와 참조를 확인해 주세요.")
+else:
+    raw_buffer = company_liquidity_input.raw_starting_liquidity_after_buffer_krw
+    company_summary = st.columns(3)
+    company_summary[0].metric("현재 가용현금", krw_consumer(company_liquidity_input.current_available_cash_krw))
+    company_summary[1].metric("최소 운영자금", krw_consumer(company_liquidity_input.minimum_operating_cash_krw))
+    company_summary[2].metric("현재 Buffer 초과 유동성", signed_krw_consumer(raw_buffer))
+
+    comparison_metrics = st.columns(3)
+    comparison_metrics[0].metric(
+        "거래만 본 필요 은행자금",
+        krw_consumer(base_result.funding.maximum_external_borrowing_krw),
+    )
+    comparison_metrics[1].metric(
+        "회사 기존 자금계획까지 포함한 필요 은행자금",
+        krw_consumer(company_liquidity_comparison.company_with_deal.peak_liquidity_gap_krw),
+    )
+    comparison_metrics[2].metric(
+        "현재 미사용 운전자금 한도",
+        krw_consumer(credit_line.unused_limit_krw) if credit_line is not None else "입력 확인 필요",
+    )
+    company_with_deal = company_liquidity_comparison.company_with_deal
+    st.write(
+        f"회사 자체 계획만 보면 최대 부족은 "
+        f"**{krw_consumer(company_liquidity_comparison.company_without_deal.peak_liquidity_gap_krw)}**, "
+        f"Deal 포함 최대 부족은 **{krw_consumer(company_with_deal.peak_liquidity_gap_krw)}**입니다."
+    )
+    if company_credit_capacity is not None:
+        if company_credit_capacity.feasible:
+            st.success(
+                "현재 입력 기준 한도 내 · 한도 여유 "
+                f"{krw_consumer(company_credit_capacity.credit_headroom_krw)}"
+            )
+        else:
+            st.error(
+                "현재 입력 한도 초과 · 한도 부족 "
+                f"{krw_consumer(company_credit_capacity.liquidity_gap_krw)}"
+            )
+    st.caption(
+        "Deal-level 배정자금과 Company-wide 현금 포지션은 서로 다른 입력입니다. "
+        "재무제표상 현금도 현재 가용현금을 자동 설정하지 않습니다."
+    )
+    timeline_rows = [
+        {
+            "날짜": point.event_date.isoformat(),
+            "시점": f"D+{point.day_offset}",
+            "회사 기존 흐름": f"{point.existing_company_cashflow_krw:,.0f}",
+            "Deal 흐름": f"{point.prospective_deal_cashflow_krw:,.0f}",
+            "예상 가용현금": f"{point.cumulative_available_liquidity_krw:,.0f}",
+            "최소 운영자금": f"{point.minimum_cash_buffer_krw:,.0f}",
+            "유동성 부족": f"{point.required_external_funding_krw:,.0f}",
+        }
+        for point in company_with_deal.points
+    ]
+    st.markdown(
+        f"**최대 유동성 부족일**  {company_with_deal.peak_liquidity_gap_date.isoformat()} "
+        f"(D+{(company_with_deal.peak_liquidity_gap_date - company_as_of_date).days})"
+    )
+    st.dataframe(timeline_rows, hide_index=True, width="stretch")
 
 if credit_line is not None:
     capacity_analysis = analyze_company_funding(
