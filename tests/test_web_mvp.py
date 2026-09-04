@@ -1,4 +1,6 @@
 import os
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -6,6 +8,12 @@ from zoneinfo import ZoneInfo
 
 from streamlit.testing.v1 import AppTest
 
+from src.ai.deal_review import (
+    DealReviewMemo,
+    DealReviewRun,
+    ReviewSignal,
+    TOOL_NAMES,
+)
 from src.ai.financialization import (
     DocumentFinancialization,
     ExtractedPaymentMethod,
@@ -14,6 +22,9 @@ from src.ai.financialization import (
     Receivable,
     TimingAnchor,
 )
+from src.domain.deal_case import reference_deal, reference_fx
+from src.external.ksure_payment import PaymentContext
+from src.finance.rescue import RescueLever
 
 
 def extracted_demo(**overrides):
@@ -72,6 +83,33 @@ def metric_by_label(app, label):
     return next(metric for metric in app.metric if metric.label == label)
 
 
+def review_result(payment_context=None):
+    return DealReviewRun(
+        question="이 거래의 주요 취약점과 목표마진을 지키기 위해 검토할 조건을 설명해줘.",
+        memo=DealReviewMemo(
+            headline="복합 상황에서 계약조건 점검이 필요합니다",
+            summary="가격과 원가 경계를 함께 읽고 자금 부담의 원인을 확인해야 합니다.",
+            key_signals=(
+                ReviewSignal.COMBINED_STRESS,
+                ReviewSignal.SALE_PRICE_BOUNDARY,
+                ReviewSignal.FUNDING_BURDEN,
+            ),
+            negotiation_focus=(
+                RescueLever.SALE_AMOUNT_USD,
+                RescueLever.COLLECTION_DAY,
+            ),
+            payment_context_note=None,
+        ),
+        deal=reference_deal(),
+        fx=reference_fx(),
+        payment_context=payment_context,
+        used_tools=TOOL_NAMES,
+        model="gpt-5.6-luna",
+        request_count=2,
+        usage=None,
+    )
+
+
 class WebMvpTests(unittest.TestCase):
     def render_without_credentials(self, input_values=None):
         with (
@@ -87,6 +125,7 @@ class WebMvpTests(unittest.TestCase):
             patch("src.external.eximbank_fx.fetch_fx_reference") as eximbank_fetch,
             patch("src.external.ksure_payment.fetch_payment_context") as ksure_fetch,
             patch("src.ai.financialization.analyze_demo_documents") as openai_extract,
+            patch("src.ai.deal_review.run_deal_review") as deal_review,
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
@@ -96,6 +135,7 @@ class WebMvpTests(unittest.TestCase):
                 ).set_value(value)
             if input_values:
                 app.run()
+        self.last_deal_review = deal_review
         self.assertEqual(app.exception, [])
         return app, eximbank_fetch, ksure_fetch, openai_extract
 
@@ -156,6 +196,7 @@ class WebMvpTests(unittest.TestCase):
             "거래서류로 자동 입력하기",
             "조건이 나빠지면 어떻게 될까요?",
             "이 거래를 목표 수준으로 만들려면?",
+            "AI 거래 검토 에이전트",
             "돈은 언제 가장 많이 필요할까요?",
             "고객 입금일까지 기다릴까, 먼저 현금화할까?",
             "공식 시장 참고정보",
@@ -207,6 +248,112 @@ class WebMvpTests(unittest.TestCase):
         eximbank_fetch.assert_not_called()
         ksure_fetch.assert_not_called()
         openai_extract.assert_not_called()
+        self.last_deal_review.assert_not_called()
+
+    def test_agent_is_visible_and_normal_rerun_does_not_call_it(self):
+        app, _, _, _ = self.render_without_credentials()
+        self.assertIn("AI 거래 검토 에이전트", [item.value for item in app.subheader])
+        self.assertIn("AI 거래 검토 실행", [item.label for item in app.button])
+        visible = "\n".join(item.value for item in (*app.markdown, *app.info))
+        self.assertIn("AI는 계산하지 않습니다", visible)
+        with patch("src.ai.deal_review.run_deal_review") as review:
+            app.run()
+        review.assert_not_called()
+
+    def test_explicit_agent_cta_renders_current_deterministic_evidence_and_trace(self):
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.button, "run_deal_review").click()
+            app.run()
+        self.assertEqual(app.exception, [])
+        review.assert_called_once()
+        visible = "\n".join(
+            item.value
+            for item in (*app.markdown, *app.info, *app.warning)
+        )
+        self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
+        self.assertIn("마진 8.83% · 목표 미달", visible)
+        self.assertIn("최소 USD 106,017", visible)
+        self.assertIn("현재 거래 분석", visible)
+        self.assertIn("Stress / 조건 역산", visible)
+        self.assertIn("K-SURE Context 확인 · 불러온 공식 데이터 없음", visible)
+
+    def test_changed_deal_marks_agent_result_stale_without_another_call(self):
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.button, "run_deal_review").click()
+            app.run()
+            next(item for item in app.number_input if item.label == "목표 마진 (%)").set_value(13.0)
+            app.run()
+        review.assert_called_once()
+        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
+        self.assertIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
+        self.assertNotIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
+
+    def test_restoring_inputs_does_not_repeat_agent_call(self):
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.button, "run_deal_review").click()
+            app.run()
+            target = next(
+                item for item in app.number_input if item.label == "목표 마진 (%)"
+            )
+            target.set_value(13.0)
+            app.run()
+            target = next(
+                item for item in app.number_input if item.label == "목표 마진 (%)"
+            )
+            target.set_value(14.0)
+            app.run()
+        review.assert_called_once()
+        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
+        self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
+        self.assertNotIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
+
+    def test_loaded_ksure_context_is_available_without_agent_or_ksure_fetch(self):
+        context = PaymentContext(
+            country_code="450",
+            industry_major_code="29",
+            last_update_date=date(2026, 8, 1),
+            reference_year=2025,
+            average_payment_period_days=Decimal("62.4"),
+            late_payment_rate_percent=Decimal("8.1"),
+            average_late_payment_period_days=Decimal("13.7"),
+            payment_terms=(),
+            payment_period_distribution=(),
+        )
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch("src.ai.deal_review.run_deal_review") as review,
+            patch("src.external.ksure_payment.fetch_payment_context") as fetch,
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+            app.session_state["ksure_payment_context"] = context
+            app.run()
+        review.assert_not_called()
+        fetch.assert_not_called()
+        visible = "\n".join(item.value for item in app.markdown)
+        self.assertIn("K-SURE Context: 포함 가능", visible)
 
     def test_public_market_surface_is_ksure_only(self):
         app, _, _, _ = self.render_without_credentials()

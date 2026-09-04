@@ -6,6 +6,12 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from src.ai.deal_review import (
+    DealReviewError,
+    ReviewSignal,
+    is_current_deal_review,
+    run_deal_review,
+)
 from src.ai.financialization import (
     FinancializationError,
     HedgeStatus,
@@ -129,6 +135,35 @@ def timing_text(anchor: TimingAnchor, days: int | None) -> str:
         TimingAnchor.UNKNOWN: "기산점 미확인 ·",
     }
     return f"{labels[anchor]} {days}일"
+
+
+DEAL_REVIEW_QUESTION = (
+    "이 거래의 주요 취약점과 목표마진을 지키기 위해 검토할 조건을 설명해줘."
+)
+
+
+def rescue_option_map(analysis):
+    return {option.lever: option for option in analysis.options}
+
+
+def render_rescue_option(option) -> None:
+    labels = {
+        RescueLever.SALE_AMOUNT_USD: ("수출가격", "USD", "최소"),
+        RescueLever.USD_PAYABLE_AMOUNT: ("USD 원재료비", "USD", "최대"),
+        RescueLever.JPY_PAYABLE_AMOUNT: ("JPY 부품비", "JPY", "최대"),
+        RescueLever.COLLECTION_DAY: ("결제기간", "D+", "최대"),
+        RescueLever.FUNDING_RATE: ("조달금리", "", "최대"),
+    }
+    label, unit, boundary = labels[option.lever]
+    st.markdown(f"**{label}**")
+    if option.status is not RescueStatus.FEASIBLE:
+        st.write("이 조건 단독 변경으로는 현재 Stress 가정에서 목표 회복 불가")
+    elif option.lever is RescueLever.COLLECTION_DAY:
+        st.write(f"{boundary} D+{option.threshold_value}")
+    elif option.lever is RescueLever.FUNDING_RATE:
+        st.write(f"{boundary} {percent(option.threshold_value)}")
+    else:
+        st.write(f"{boundary} {unit} {option.threshold_value:,.0f}")
 
 
 reference = reference_deal()
@@ -694,6 +729,167 @@ else:
         "가격·원가·결제조건의 실제 협상 가능성을 판단하거나 계약 체결을 "
         "권고하는 기능이 아닙니다."
     )
+
+st.subheader("AI 거래 검토 에이전트")
+st.badge("읽기 전용 · 금융계산은 결정론적 엔진", color="violet")
+st.write(
+    "AI가 현재 거래, Stress, 조건 역산과 이미 불러온 공식 Context를 "
+    "도구로 읽고 검토 포인트를 정리합니다."
+)
+st.info("AI는 계산하지 않습니다. 검증된 계산 결과를 읽고 연결해 설명합니다.")
+current_payment_context = st.session_state.get("ksure_payment_context")
+st.markdown("#### 현재 Agent 근거")
+st.write("- 현재 거래 분석")
+st.write("- Stress / 조건 역산")
+st.write(
+    "- K-SURE Context: "
+    + ("포함 가능" if current_payment_context is not None else "불러온 값 없음")
+)
+review_question = st.text_area(
+    "검토 질문",
+    value=DEAL_REVIEW_QUESTION,
+    max_chars=400,
+    key="deal_review_question",
+)
+if st.button("AI 거래 검토 실행", type="primary", key="run_deal_review"):
+    with st.spinner("현재 거래 근거를 읽고 검토하고 있습니다..."):
+        try:
+            review_run = run_deal_review(
+                review_question,
+                deal=deal,
+                fx=fx,
+                base_result=base_result,
+                scenario_results=tuple(scenario_results.items()),
+                zero_profit_threshold=zero_profit_threshold,
+                target_margin_threshold=target_threshold,
+                rescue_analysis=rescue_analysis,
+                payment_context=current_payment_context,
+            )
+        except DealReviewError:
+            st.session_state["deal_review_error"] = (
+                "AI 거래 검토를 완료하지 못했습니다."
+            )
+        else:
+            st.session_state["deal_review_run"] = review_run
+            st.session_state.pop("deal_review_error", None)
+
+if review_error := st.session_state.get("deal_review_error"):
+    st.warning(review_error)
+
+review_run = st.session_state.get("deal_review_run")
+if review_run is not None:
+    review_is_current = is_current_deal_review(
+        review_run,
+        review_question,
+        deal,
+        fx,
+        current_payment_context,
+    )
+    if not review_is_current:
+        st.warning(
+            "현재 거래 입력 또는 공식 Context가 변경되어 기존 AI 검토는 현재 "
+            "상태와 일치하지 않습니다. 다시 생성해 주세요."
+        )
+    else:
+        memo = review_run.memo
+        st.markdown(f"### {memo.headline}")
+        st.write(memo.summary)
+        st.markdown("#### AI가 선택한 핵심 근거")
+        options = rescue_option_map(rescue_analysis)
+        for signal in memo.key_signals:
+            with st.container(border=True):
+                if signal is ReviewSignal.CURRENT_MARGIN:
+                    st.markdown("**현재 마진**")
+                    st.write(
+                        f"{percent(base_result.financing_adjusted_deal_margin)} · "
+                        f"{'✓ 목표 충족' if meets_target else '목표 미달'}"
+                    )
+                elif signal is ReviewSignal.FX_RESILIENCE:
+                    st.markdown("**USD/KRW 목표마진 유지선**")
+                    if target_threshold is None:
+                        st.write("현재 입력에서는 계산 불가")
+                    else:
+                        buffer = fx.usd_krw - target_threshold
+                        st.write(
+                            f"현재 {fx.usd_krw:,.2f}원 · 유지선 "
+                            f"{target_threshold:,.2f}원 · 차이 {buffer:+,.2f}원"
+                        )
+                elif signal is ReviewSignal.FUNDING_BURDEN:
+                    st.markdown("**자금 부담**")
+                    st.write(
+                        f"최대 자금소요 {krw_consumer(base_result.funding.peak_deal_funding_krw)}"
+                        f" · 최대 외부차입 {krw_consumer(base_result.funding.maximum_external_borrowing_krw)}"
+                    )
+                elif signal is ReviewSignal.COMBINED_STRESS:
+                    combined_meets = (
+                        combined_result.financing_adjusted_deal_margin
+                        >= deal.target_margin
+                    )
+                    st.markdown("**복합 Stress**")
+                    st.write(
+                        f"마진 {percent(combined_result.financing_adjusted_deal_margin)} · "
+                        f"{'✓ 목표 충족' if combined_meets else '목표 미달'}"
+                    )
+                elif signal is ReviewSignal.KSURE_PAYMENT_CONTEXT:
+                    if current_payment_context is not None:
+                        st.markdown("**K-SURE 결제 Context**")
+                        st.write(
+                            "평균 결제기간 "
+                            f"{decimal_text(current_payment_context.average_payment_period_days, '일')} · "
+                            "지연결제율 "
+                            f"{decimal_text(current_payment_context.late_payment_rate_percent, '%')} · "
+                            "평균 지연기간 "
+                            f"{decimal_text(current_payment_context.average_late_payment_period_days, '일')}"
+                        )
+                else:
+                    signal_levers = {
+                        ReviewSignal.SALE_PRICE_BOUNDARY: RescueLever.SALE_AMOUNT_USD,
+                        ReviewSignal.USD_COST_BOUNDARY: RescueLever.USD_PAYABLE_AMOUNT,
+                        ReviewSignal.JPY_COST_BOUNDARY: RescueLever.JPY_PAYABLE_AMOUNT,
+                        ReviewSignal.COLLECTION_DAY_BOUNDARY: RescueLever.COLLECTION_DAY,
+                        ReviewSignal.FUNDING_RATE_BOUNDARY: RescueLever.FUNDING_RATE,
+                    }
+                    lever = signal_levers[signal]
+                    if lever in options:
+                        render_rescue_option(options[lever])
+                    else:
+                        st.write("현재 Stress에서는 추가 조건 역산이 필요하지 않습니다.")
+
+        if memo.negotiation_focus:
+            st.markdown("#### AI가 설명 대상으로 선택한 계약조건")
+            for lever in memo.negotiation_focus:
+                if lever in options:
+                    render_rescue_option(options[lever])
+                else:
+                    st.write("현재 Stress에서는 추가 조건 역산이 필요하지 않습니다.")
+
+        if current_payment_context is not None and memo.payment_context_note:
+            st.markdown("#### K-SURE Context 해석")
+            st.warning("국가·업종 집계 · 개별 바이어 예측 아님")
+            st.write(memo.payment_context_note)
+
+        st.markdown("#### 사용한 분석 도구")
+        tool_labels = {
+            "read_current_deal_analysis": "현재 거래 분석",
+            "read_stress_and_rescue": "Stress / 조건 역산",
+            "read_payment_context": "K-SURE Context 확인",
+        }
+        for tool_name in review_run.used_tools:
+            label = tool_labels[tool_name]
+            if tool_name == "read_payment_context" and current_payment_context is None:
+                label += " · 불러온 공식 데이터 없음"
+            st.write(f"✓ {label}")
+
+        with st.expander("AI 실행 정보"):
+            st.write(f"모델: {review_run.model}")
+            st.write(f"요청 횟수: {review_run.request_count}")
+            st.write("도구: " + ", ".join(review_run.used_tools))
+            if review_run.usage is not None:
+                st.write(
+                    f"토큰: 입력 {review_run.usage.input_tokens:,} · "
+                    f"출력 {review_run.usage.output_tokens:,} · "
+                    f"합계 {review_run.usage.total_tokens:,}"
+                )
 
 st.subheader("돈은 언제 가장 많이 필요할까요?")
 st.badge("계산 결과", color="blue")

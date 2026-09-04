@@ -16,6 +16,7 @@ FROZEN / IMPLEMENTED:
 • Deterministic End-to-End Web MVP
 • Accepted KRDS/Toss-inspired presentation layer
 • AI Financialization
+• Single Deal Review Agent
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
 • Public Streamlit deployment
@@ -27,13 +28,14 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• Single Deal Review Agent — one bounded read-only agent that consumes the current Deal state, deterministic finance / stress / rescue outputs and already-loaded K-SURE context to produce a grounded Deal Review memo
-• The agent never performs authoritative financial calculations, mutates the Deal or executes finance
+• Submission Artifacts / Final Freeze
+• No additional product feature is authorized by this gate
 
 DEFERRED:
 
-• AI plain-Korean explanation
 • RAG, multi-agent architecture and arbitrary web search
+• Hugging Face runtime
+• FX forecasting
 • Bank of Korea ECOS adapter
 • EUR/CNY engine expansion
 • Insurance, guarantees and hedge engine
@@ -1040,7 +1042,7 @@ Output:
 
 The user reviews extracted values before calculation.
 
-16.2 Explanation — Deferred
+16.2 Single Deal Review Agent
 
 Explain:
 
@@ -1049,6 +1051,18 @@ Explain:
 • why external borrowing increased
 • why payment delay increased funding cost
 • liquidity/cost tradeoff of receivable purchase
+
+The Single Deal Review Agent consumes only the current Deal state,
+already-computed Financial Engine and Deal Rescue outputs, and optional
+already-loaded K-SURE aggregate context. It produces a concise grounded review
+memo through exactly three local read-only evidence tools and never fetches
+external data, calculates authoritative financial values, mutates the Deal,
+executes finance, or stores conversation history.
+
+AI-generated prose does not restate authoritative numeric values. The Web MVP
+renders selected signals and negotiation topics from current deterministic
+state. K-SURE context remains country-and-industry aggregate context, not an
+individual buyer prediction or credit score.
 
 AI must distinguish:
 
@@ -1217,9 +1231,9 @@ This gate is limited to:
 3. deterministic amount, currency, timing and payment-method validation;
 4. explicit user confirmation and a safe proposed Deal-input patch.
 
-AI explanation, arbitrary PDF upload, insurance, guarantees, hedge execution,
-databases, authentication, BOK integration, RAG and agents remain deferred. AI
-must never become the authoritative financial calculator.
+Arbitrary PDF upload, insurance, guarantees, hedge execution, databases,
+authentication, BOK integration and RAG remain deferred. AI must never become
+the authoritative financial calculator.
 
 ────────
 
@@ -1242,8 +1256,10 @@ forecast, or contract acceptance recommendation.
 ```text
 Web MVP caller
     ├──→ Financial Engine v0.1
+    ├──→ Deal Rescue Solver
     ├──→ K-SURE payment context
-    └──→ AI Financialization → reviewed proposed Deal-input patch
+    ├──→ AI Financialization → reviewed proposed Deal-input patch
+    └──→ Single Deal Review Agent → grounded explanation of current evidence
 
 Deployment-deferred technical asset
     └──→ Korea Eximbank reference-FX adapter
@@ -1254,9 +1270,10 @@ MVP does not expose Korea Eximbank retrieval.
 
 ────────
 
-24. Deferred Product Gates
+24. Current Product Gate
 
-The current gate is Deal Rescue / Negotiation Solver. AI explanation, BOK
-integration, EUR/CNY engine expansion, insurance, guarantee, FX-cover
-simulation, databases and authentication remain deferred. They require a later
-explicit specification change.
+The current gate is Submission Artifacts / Final Freeze. RAG, multi-agent
+architecture, arbitrary web search, Hugging Face runtime, FX forecasting, BOK
+integration, EUR/CNY engine expansion, insurance, guarantee, hedge execution,
+databases and authentication remain deferred. They require a later explicit
+specification change.

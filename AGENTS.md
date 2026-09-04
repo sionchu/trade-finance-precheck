@@ -8,13 +8,13 @@
 
 ## Current gate
 
-- The deterministic Financial Engine v0.1, Deal Rescue / Negotiation Solver, End-to-End Web MVP, accepted presentation layer, AI Financialization, K-SURE public payment-context integration, Deal Pre-check Report, and public Streamlit deployment are implemented and frozen.
+- The deterministic Financial Engine v0.1, Deal Rescue / Negotiation Solver, End-to-End Web MVP, accepted presentation layer, AI Financialization, bounded Single Deal Review Agent, K-SURE public payment-context integration, Deal Pre-check Report, and public Streamlit deployment are implemented and frozen.
 - The Korea Eximbank reference-FX adapter is locally validated and deployment-deferred. Its public Streamlit runtime path is disabled because it is unreliable in that target environment.
 - Bank of Korea ECOS is validated and deferred; no ECOS adapter is implemented.
 - Do not modify frozen behavior unless a new, evidenced P0 correctness issue is established.
 - New application layers must consume frozen components through explicit boundaries. External API access must never move inside Financial Engine calculations.
-- The current authorized gate is Single Deal Review Agent: one bounded read-only agent that consumes current Deal state and already-computed finance, stress, rescue, and loaded K-SURE context to produce a grounded Deal Review memo. It must not perform authoritative financial calculations, mutate the Deal, or execute finance.
-- AI plain-Korean explanation is deferred. AI must never become the authoritative financial calculator.
+- The current authorized gate is Submission Artifacts / Final Freeze. Do not authorize another product feature from this gate.
+- The Single Deal Review Agent is a one-shot, bounded read-only explanation layer. It must not perform authoritative financial calculations, mutate the Deal, execute finance, fetch external data, or retain conversation history.
 - Do not advance to insurance, guarantees, hedge execution, databases, authentication, multi-agent systems, RAG, arbitrary web search, EUR/CNY support, microservices, or speculative provider abstractions.
 
 ## Anti-bloat rules
