@@ -8,7 +8,7 @@ The canonical product definition is [docs/product-spec.md](docs/product-spec.md)
 
 The repository contains the frozen Deal Economics, Company Liquidity, and FX Treasury foundation: deterministic
 Financial Engine v0.1, Deal Rescue / Negotiation Solver, Company Liquidity &
-Funding Choice, Forward Hedge Simulation, Streamlit Web MVP and
+Funding Choice, Forward Hedge Simulation, Banker's Usance simulation, Streamlit Web MVP and
 presentation layer, Trade Document Financialization, Financial Statement
 Financialization with a normalized Company Liquidity Profile, the bounded
 read-only Single Deal Review Agent, public K-SURE aggregate payment context, and
@@ -39,7 +39,14 @@ forward quotes at user-supplied settlement spots. It does not forecast or
 execute FX. Its hedge profit/loss overlay does not recompute the Deal funding
 schedule for derivative settlement cash flows.
 
-The current authorized gate is **T4 — Banker's Usance**.
+Banker's Usance is implemented as a deterministic financing overlay on one
+selected foreign payable. It compares ordinary working-capital line use with
+the separate Usance principal obligation and explicit rate/fee assumptions.
+It does not predict approval, execute financing, hedge FX automatically, or
+implement a full L/C / UPAS workflow.
+
+The current authorized gate is **T5 — Treasury integration into the Single
+Deal Review Agent**.
 
 The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
 Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4

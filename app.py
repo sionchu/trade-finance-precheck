@@ -66,6 +66,7 @@ from src.finance.rescue import (
     RescueStatus,
     analyze_deal_rescue,
 )
+from src.finance.usance import BankersUsanceInput, analyze_bankers_usance
 from src.reporting.deal_report import (
     DealReportInput,
     build_deal_report,
@@ -122,6 +123,12 @@ def signed_krw_consumer(value: Decimal) -> str:
     if value > 0:
         return f"+{krw_consumer(value)}"
     return krw_consumer(value)
+
+
+def krw_ten_thousands(value: Decimal) -> str:
+    amount = value / Decimal("10000")
+    rendered = f"{amount:,.2f}".rstrip("0").rstrip(".")
+    return f"{rendered}만원"
 
 
 def decimal_text(value: Decimal | None, suffix: str = "") -> str:
@@ -1207,6 +1214,153 @@ if credit_line is not None:
         "T2의 추가 한도 수수료는 자금조달 비교 비용에 포함되며 "
         "기존 Deal Margin 엔진에는 자동 반영하지 않습니다."
     )
+
+st.subheader("수입대금 지급을 은행 신용으로 늦춰보면?")
+st.badge("Banker's Usance 시뮬레이션 · 승인/실행 아님", color="blue")
+st.write(
+    "은행이 공급자에게 먼저 지급하고 회사가 만기에 은행에 상환하는 "
+    "자금조달 가정입니다."
+)
+payable_labels = tuple(
+    f"{payable.currency.value} {payable.amount:,.0f} · 공급자 지급 D+{payable.payment_day}"
+    for payable in deal.foreign_payables
+)
+default_usance_index = next(
+    (
+        index
+        for index, payable in enumerate(deal.foreign_payables)
+        if payable.currency is Currency.JPY
+    ),
+    0,
+)
+usance_inputs = st.columns(4)
+selected_payable_label = usance_inputs[0].selectbox(
+    "대상 외화 지급",
+    payable_labels,
+    index=default_usance_index,
+    key="usance_payable_input",
+)
+selected_payable_index = payable_labels.index(selected_payable_label)
+selected_payable = deal.foreign_payables[selected_payable_index]
+usance_repayment_day = usance_inputs[1].number_input(
+    "회사 상환일 (D+)",
+    min_value=selected_payable.payment_day + 1,
+    value=max(90, selected_payable.payment_day + 1),
+    step=1,
+    key="usance_repayment_day_input",
+)
+usance_rate_percent = usance_inputs[2].number_input(
+    "Usance 연 금리 (%)",
+    min_value=0.0,
+    value=4.8,
+    step=0.1,
+    key="usance_rate_input",
+)
+usance_fee_percent = usance_inputs[3].number_input(
+    "Usance 수수료율 (%)",
+    min_value=0.0,
+    value=0.15,
+    step=0.05,
+    key="usance_fee_input",
+)
+st.caption("데모 입력 · 실제 은행 Usance 승인·한도·quote 아님")
+
+if credit_line is not None:
+    usance_comparison = analyze_bankers_usance(
+        deal=deal,
+        fx=fx,
+        base_result=base_result,
+        credit_line=credit_line,
+        usance_input=BankersUsanceInput(
+            payable_index=selected_payable_index,
+            repayment_day=int(usance_repayment_day),
+            annual_usance_rate=decimal_from_widget(usance_rate_percent)
+            / Decimal("100"),
+            fee_rate=decimal_from_widget(usance_fee_percent) / Decimal("100"),
+        ),
+    )
+    usance = usance_comparison.usance
+    usance_columns = st.columns(2)
+    with usance_columns[0].container(border=True):
+        st.markdown("#### 현재 지급구조")
+        st.write(f"**공급자 지급**  D+{usance.supplier_payment_day}")
+        st.write(
+            f"**일반 운전자금 피크**  "
+            f"{krw_consumer(usance_comparison.base_working_capital_credit_krw)}"
+        )
+        st.write(
+            f"**일반 운전자금 한도 여유**  "
+            f"{krw_consumer(usance_comparison.base_ordinary_line_headroom_krw)}"
+        )
+        st.write(
+            f"**일반 운전자금 이자**  "
+            f"약 {krw_ten_thousands(base_result.funding.external_funding_cost_krw)}"
+        )
+        st.write(
+            f"**총 금융비용**  약 "
+            f"{krw_ten_thousands(usance_comparison.base_total_financing_cost_krw)}"
+        )
+    with usance_columns[1].container(border=True):
+        st.markdown("#### Banker's Usance 가정")
+        st.write(f"**은행 → 공급자**  D+{usance.supplier_payment_day}")
+        st.write(f"**회사 → 은행**  D+{usance.company_repayment_day}")
+        st.write(f"**Usance 원금**  {krw_consumer(usance.principal_krw)}")
+        st.write(
+            f"**일반 운전자금 피크**  "
+            f"{krw_consumer(usance.peak_working_capital_credit_krw)}"
+        )
+        st.write(
+            f"**일반 운전자금 한도 여유**  "
+            f"{krw_consumer(usance.ordinary_line_headroom_krw)}"
+        )
+        st.write(f"**Usance 이자**  약 {krw_ten_thousands(usance.usance_interest_krw)}")
+        st.write(f"**Usance 수수료**  {krw_ten_thousands(usance.usance_fee_krw)}")
+        st.write(f"**총 금융비용**  약 {krw_ten_thousands(usance.total_financing_cost_krw)}")
+
+    st.markdown("#### 일반 운전자금 한도 부담")
+    burden_columns = st.columns(3)
+    burden_columns[0].metric(
+        "현재", krw_consumer(usance_comparison.base_working_capital_credit_krw)
+    )
+    burden_columns[1].metric(
+        "Usance", krw_consumer(usance.peak_working_capital_credit_krw)
+    )
+    burden_columns[2].metric(
+        "감소", krw_consumer(usance_comparison.working_capital_credit_reduction_krw)
+    )
+    st.markdown("#### 은행 신용 원금 기준 피크")
+    exposure_columns = st.columns(2)
+    exposure_columns[0].metric(
+        "현재 구조", krw_consumer(usance_comparison.base_working_capital_credit_krw)
+    )
+    exposure_columns[1].metric(
+        "Usance 구조", krw_consumer(usance.peak_combined_bank_principal_krw)
+    )
+    st.write("일반 운전자금 한도 사용은 줄지만, 동일 금액의 Usance 은행채무가 별도로 생깁니다.")
+    st.write(
+        f"**총 금융비용 차이**  "
+        f"{signed_krw_consumer(usance_comparison.financing_cost_difference_krw)}"
+    )
+    if (
+        usance_comparison.working_capital_credit_reduction_krw > 0
+        and usance_comparison.financing_cost_difference_krw == usance.usance_fee_krw
+    ):
+        st.info(
+            "현재 입력에서는 일반 운전자금 한도 부담은 줄고, "
+            "금융비용은 수수료만큼 증가합니다."
+        )
+    else:
+        st.info("현재 입력에 따른 일반 운전자금 부담과 총 금융비용을 함께 비교합니다.")
+
+st.caption("Usance 자체 승인·한도는 본 시뮬레이션에서 판단하지 않습니다.")
+st.caption(
+    "지급시점이 늦어져도 환위험이 자동으로 없어지는 것은 아닙니다. "
+    "실제 만기 상환통화와 환율고정 조건은 은행 계약조건 확인이 필요합니다."
+)
+st.caption(
+    "Usance는 자금조달 시점을 바꾸는 기능이며, "
+    "환율위험은 아래 외환위험 섹션에서 별도로 확인합니다."
+)
 
 st.subheader("외화는 어느 방향으로 위험할까요?")
 st.badge("통화별 결정론적 노출", color="blue")

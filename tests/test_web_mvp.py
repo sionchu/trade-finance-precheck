@@ -233,6 +233,7 @@ class WebMvpTests(unittest.TestCase):
             "AI 거래 검토 에이전트",
             "회사 자금으로 대금 회수일까지 버틸 수 있을까요?",
             "부족한 돈은 어떻게 메울까요?",
+            "수입대금 지급을 은행 신용으로 늦춰보면?",
             "외화는 어느 방향으로 위험할까요?",
             "환율을 열어둘까, 일부 고정할까?",
             "공식 시장 참고정보",
@@ -326,6 +327,48 @@ class WebMvpTests(unittest.TestCase):
         )
         visible = "\n".join(item.value for item in (*app.markdown, *app.error))
         self.assertGreaterEqual(visible.count("**부족**  900만원"), 2)
+
+    def test_bankers_usance_comparison_is_visible_and_bounded(self):
+        app, _, _, _ = self.render_without_credentials()
+        headings = [item.value for item in app.subheader]
+        self.assertIn("수입대금 지급을 은행 신용으로 늦춰보면?", headings)
+        payable_input = next(
+            item for item in app.selectbox if item.label == "대상 외화 지급"
+        )
+        self.assertIn("JPY 3,000,000 · 공급자 지급 D+30", payable_input.options)
+        values = {item.label: item.value for item in app.number_input}
+        self.assertEqual(values["회사 상환일 (D+)"], 90)
+        self.assertEqual(values["Usance 연 금리 (%)"], 4.8)
+        self.assertEqual(values["Usance 수수료율 (%)"], 0.15)
+        visible = "\n".join(
+            item.value
+            for item in (
+                *app.markdown,
+                *app.caption,
+                *app.info,
+                *app.metric,
+            )
+        )
+        for text in (
+            "Banker's Usance 시뮬레이션 · 승인/실행 아님",
+            "**일반 운전자금 피크**  6,900만원",
+            "**일반 운전자금 피크**  4,200만원",
+            "**일반 운전자금 한도 여유**  100만원",
+            "**일반 운전자금 한도 여유**  2,800만원",
+            "**Usance 원금**  2,700만원",
+            "**Usance 이자**  약 21.3만원",
+            "**Usance 수수료**  4.05만원",
+            "**총 금융비용**  약 54.94만원",
+            "일반 운전자금 한도 사용은 줄지만",
+            "Usance 자체 승인·한도는 본 시뮬레이션에서 판단하지 않습니다",
+            "환위험이 자동으로 없어지는 것은 아닙니다",
+        ):
+            self.assertIn(text, visible)
+        self.assertGreaterEqual(visible.count("6,900만원"), 3)
+        self.assertIn("2,700만원", [item.value for item in app.metric])
+        self.assertIn("4.05만원", visible)
+        self.last_statement_extract.assert_not_called()
+        self.last_deal_review.assert_not_called()
 
     def test_fx_treasury_positions_and_hedge_overlay_are_visible(self):
         app, _, _, _ = self.render_without_credentials()

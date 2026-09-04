@@ -19,6 +19,7 @@ FROZEN / IMPLEMENTED:
 • Financial Statement Financialization / Company Liquidity Profile
 • Company Liquidity & Funding Choice
 • FX Treasury / Forward Hedge Simulation
+• Banker's Usance
 • Single Deal Review Agent
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
@@ -31,7 +32,7 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• T4 — Banker's Usance
+• T5 — Treasury integration into Single Deal Review Agent
 
 DEFERRED:
 
@@ -1398,14 +1399,17 @@ credit-line explicit fee is included in the funding-choice cost comparison only
 when external credit is required; it is not injected into the frozen Deal Margin
 engine because that engine has no timed semantic for this fee.
 
-Banker's Usance remains the separate T4 gate for a supported foreign payable.
+────────
+
+26. Frozen Gate — Banker's Usance
 
 Payment method and financing structure remain separate. Core Deal payment
 methods are OA and TT. L/C recognition remains extraction-only and unsupported
 by the core Deal engine unless a later explicit gate changes it. Do not create a
 generic `PAYMENT_USANCE` enum.
 
-The authorized Banker's Usance simulation is narrow:
+The implemented Banker's Usance simulation is a narrow financing overlay on
+one selected existing foreign payable:
 
 ```text
 supplier payment date
@@ -1417,12 +1421,23 @@ company repayment date
 financing interest + explicit fee
 ```
 
+The supplier-economic payment day remains explicit while the company's cash
+payment moves to a user-supplied repayment day. The user supplies the Usance
+rate and fee. Current `FxRates` are used only as a deterministic KRW valuation
+basis; the simulation does not forecast FX or automatically hedge the payable.
+
+The comparison distinguishes reduced ordinary working-capital line use from
+total bank principal exposure. Usance principal remains a separate bank
+obligation during the tenor and is included in the combined bank-principal
+peak. The simulation does not determine Usance approval or limit and executes
+nothing.
+
 It does not implement a full L/C workflow, UCP document compliance, UPAS,
 document-discrepancy handling, or acceptance / negotiation bank workflows.
 
 ────────
 
-26. Frozen Gate — FX Treasury / Forward Hedge Simulation
+27. Frozen Gate — FX Treasury / Forward Hedge Simulation
 
 Exposure is classified per currency, not by labeling the company simply as an
 exporter or importer:
@@ -1457,7 +1472,7 @@ funding schedule with derivative settlement cash flows.
 
 ────────
 
-27. Canonical Treasury Gate Sequence
+28. Canonical Treasury Gate Sequence
 
 1. T1 — Financial Statement AI / Company Liquidity Profile
 2. T2 — Company Liquidity & Funding Choice
@@ -1466,12 +1481,12 @@ funding schedule with derivative settlement cash flows.
 5. T5 — Treasury integration into Single Deal Review Agent
 6. T6 — Presentation IA RE0 / Report / Submission Final Freeze
 
-The current authorized gate is T4. Later gates are defined boundaries, not
+The current authorized gate is T5. Later gates are defined boundaries, not
 authorization to implement them early.
 
 ────────
 
-28. Deferred Scope
+29. Deferred Scope
 
 The following remain deferred:
 
