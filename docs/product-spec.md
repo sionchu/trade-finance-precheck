@@ -2,7 +2,7 @@ AI Trade Finance Pre-check — Product Spec v0.1
 
 Status: Canonical implementation and product specification
 Purpose: 2026 금융 AI Challenge MVP
-Scope rule: One export deal. Deterministic finance first.
+Scope rule: One export deal in company-liquidity and currency context. Deterministic finance first.
 Last updated: 2026-09-04
 
 ────────
@@ -28,17 +28,19 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• Submission Artifacts / Final Freeze
-• No additional product feature is authorized by this gate
+• T1 — Financial Statement AI / Company Liquidity Profile
 
 DEFERRED:
 
 • RAG, multi-agent architecture and arbitrary web search
 • Hugging Face runtime
-• FX forecasting
+• FX forecasting, CFaR Monte Carlo and stochastic risk models
 • Bank of Korea ECOS adapter
 • EUR/CNY engine expansion
-• Insurance, guarantees and hedge engine
+• Insurance and guarantee execution
+• Actual hedge and loan execution
+• Bank credit approval and buyer default prediction
+• Full L/C workflow, UPAS and D/A / D/P engine expansion
 • Database and authentication
 
 ────────
@@ -49,13 +51,33 @@ Canonical model principle:
 
 > A trade deal is not financially complete if the engine only calculates FX and an abstract funding-rate cost.
 
-The canonical model separates:
+The product connects three decision layers:
 
-1. Deal economics — sales, foreign inputs, KRW costs
-2. Liquidity requirement — how much cash the deal requires and when
-3. External financing — how much must actually be borrowed after available company cash
-4. Receivable monetization — wait for the buyer or sell/purchase the receivable early
-5. Risk-transfer context — insurance / guarantee / FX-cover as later option simulations
+A. Deal Economics — existing and frozen
+
+• document financialization
+• margin and dated Deal cash flow
+• funding requirement and Stress
+• USD/KRW threshold and Deal Rescue
+• receivable early-purchase simulation
+
+B. Company Liquidity — authorized Treasury scope
+
+• Financial Statement AI
+• company liquidity profile
+• user-confirmed cash available to this Deal
+• existing bank credit line and unused limit
+• funding capacity and liquidity gap
+• deterministic funding-choice comparison
+
+C. FX Treasury — authorized Treasury scope
+
+• currency-level receivables and payables
+• natural offset and open net exposure
+• unfavorable FX direction
+• user-supplied forward quote
+• hedge ratio and residual exposure
+• deterministic hedged-scenario comparison
 
 The project is not a trade-finance platform.
 
@@ -67,7 +89,8 @@ Financial Engine v0.1 includes:
 • O/A receivable early-purchase simulation
 • FX / rate / payment-delay stress
 
-Insurance, guarantees and FX cover remain deferred product options.
+Insurance and guarantee execution remain deferred. Forward-hedge simulation is
+authorized only for T3 and does not predict or execute an FX transaction.
 
 ────────
 
@@ -91,7 +114,9 @@ These facts are often split across contracts, invoices, spreadsheets, ERP, banks
 
 Canonical Question
 
-> **“If we accept this deal on these payment terms, will its margin and liquidity still hold under FX, delayed collection and funding stress?”**
+> **“이 거래를 우리 회사가 감당할 수 있는가? 부족한 자금은 어떻게 메우고, 외화위험은 어디까지 관리해야 하는가?”**
+
+English concept: **Company-aware Trade Treasury Pre-check**
 
 Target User
 
@@ -139,15 +164,22 @@ Early receivable purchase
 Financial explanation
 ```
 
-Deferred product options:
+Company-aware Treasury path:
 
 ```text
-Export credit insurance
-Export credit guarantee
-FX insurance / hedge
+Financial Statement
+        ↓
+Company Liquidity Profile
+        ↓
+Liquidity gap / funding-choice comparison
+        ↓
+Currency-level natural offset and open exposure
+        ↓
+Forward-hedge scenario using a user-supplied quote
 ```
 
-may be added as option simulations, not execution workflows.
+All financial outputs remain deterministic pre-check simulations, not execution
+or approval workflows.
 
 ────────
 
@@ -940,9 +972,9 @@ Rules:
 
 ────────
 
-14. Financial Options
+14. Deal-level Financial Options
 
-Canonical future enum:
+The frozen Deal-level option taxonomy is:
 
 ```text
 FinancialOption
@@ -951,7 +983,7 @@ FinancialOption
 ├── EARLY_RECEIVABLE_PURCHASE
 ├── EXPORT_CREDIT_INSURANCE        # deferred
 ├── EXPORT_CREDIT_GUARANTEE        # deferred
-└── FX_COVER                       # deferred
+└── FX_COVER                       # superseded by the T3 Treasury boundary
 ```
 
 Do not create:
@@ -964,7 +996,9 @@ GuaranteeAgent
 HedgeAgent
 ```
 
-Each option should modify deterministic cashflow/risk assumptions, not create a new agent architecture.
+Each implemented option modifies deterministic cashflow or risk assumptions,
+not a new agent architecture. T2 through T4 introduce explicit Treasury
+simulation inputs and do not extend this enum speculatively.
 
 ────────
 
@@ -1014,7 +1048,7 @@ P1 Deferred
 • actual trade-finance fee schedules
 • product-specific insurance premium calculations
 • Customs export/import trend
-• corporate financials
+• buyer-specific corporate financials
 • logistics tracking
 • buyer-specific credit
 • cargo insurance
@@ -1026,9 +1060,9 @@ P1 Deferred
 
 16. AI Responsibility
 
-AI has only two jobs.
+The product has exactly three AI roles.
 
-16.1 Document Extraction
+16.1 Trade Document Financialization
 
 Input:
 
@@ -1040,9 +1074,40 @@ Output:
 
 • proposed DealCase
 
-The user reviews extracted values before calculation.
+The user reviews extracted values before calculation. This role is implemented
+and frozen.
 
-16.2 Single Deal Review Agent
+16.2 Financial Statement Financialization
+
+Input:
+
+• company financial statement
+
+Output:
+
+• proposed company-liquidity facts supported explicitly by the statement
+
+Authorized extraction fields:
+
+• cash and cash equivalents
+• short-term financial instruments or deposits, when explicitly present
+• accounts receivable
+• inventory
+• current assets
+• current liabilities
+• short-term borrowings
+• interest expense or finance cost, when explicitly present
+• operating cash flow
+
+Retained earnings is not company available cash. AI must not transform retained
+earnings into liquidity. AI must not infer credit approval, bank lending
+capacity, Deal-specific available cash, a credit score, default, or future cash
+flow.
+
+The final value for “이번 거래에 실제 투입 가능한 회사자금” remains an
+explicit user-confirmed Deal input. T1 is the current authorized gate.
+
+16.3 Single Deal Review Agent
 
 Explain:
 
@@ -1058,6 +1123,9 @@ already-loaded K-SURE aggregate context. It produces a concise grounded review
 memo through exactly three local read-only evidence tools and never fetches
 external data, calculates authoritative financial values, mutates the Deal,
 executes finance, or stores conversation history.
+
+This role is implemented and frozen. T5 may integrate already-computed Treasury
+context while preserving the same read-only, bounded, non-calculating boundary.
 
 AI-generated prose does not restate authoritative numeric values. The Web MVP
 renders selected signals and negotiation topics from current deterministic
@@ -1145,7 +1213,6 @@ Unless this spec is explicitly revised, do not implement:
 • real guarantee application
 • factoring platform
 • forfaiting workflow
-• company-wide treasury
 • ERP integration
 • user authentication
 • portfolio database
@@ -1156,6 +1223,8 @@ Unless this spec is explicitly revised, do not implement:
 • RAG framework
 • custom financial LLM
 • FX prediction
+• CFaR Monte Carlo
+• stochastic risk model
 • rate prediction
 • buyer-default ML
 • generic API Provider Factory
@@ -1270,10 +1339,126 @@ MVP does not expose Korea Eximbank retrieval.
 
 ────────
 
-24. Current Product Gate
+24. Company Liquidity Profile — T1
 
-The current gate is Submission Artifacts / Final Freeze. RAG, multi-agent
-architecture, arbitrary web search, Hugging Face runtime, FX forecasting, BOK
-integration, EUR/CNY engine expansion, insurance, guarantee, hedge execution,
-databases and authentication remain deferred. They require a later explicit
-specification change.
+Financial Statement Financialization extracts only the explicit facts listed in
+section 16.2 into a user-reviewable company-liquidity profile. It does not
+calculate or infer bank lending capacity, credit approval, a credit score,
+default, future cash flow, or the amount available to this Deal.
+
+The Deal-specific value “이번 거래에 실제 투입 가능한 회사자금” remains an
+explicit user-confirmed input. Retained earnings is never treated as cash or
+available liquidity.
+
+T1 is the current authorized implementation gate.
+
+────────
+
+25. Company Liquidity and Funding Choice — T2 / T4
+
+The deterministic funding comparison may evaluate:
+
+1. internal company cash;
+2. an existing working-capital credit line;
+3. receivable early purchase;
+4. Banker's Usance for a supported foreign payable.
+
+Bank credit uses only user-supplied existing facts:
+
+• total credit limit
+• used amount
+• unused amount
+• borrowing rate
+• optional explicit fee
+
+The comparison derives funding capacity and any liquidity gap. It does not
+predict bank approval, recommend a bank, execute borrowing, or score
+creditworthiness.
+
+Payment method and financing structure remain separate. Core Deal payment
+methods are OA and TT. L/C recognition remains extraction-only and unsupported
+by the core Deal engine unless a later explicit gate changes it. Do not create a
+generic `PAYMENT_USANCE` enum.
+
+The authorized Banker's Usance simulation is narrow:
+
+```text
+supplier payment date
+        ↓
+bank pays supplier
+        ↓
+company repayment date
+        ↓
+financing interest + explicit fee
+```
+
+It does not implement a full L/C workflow, UCP document compliance, UPAS,
+document-discrepancy handling, or acceptance / negotiation bank workflows.
+
+────────
+
+26. FX Treasury / Forward Hedge Simulation — T3
+
+Exposure is classified per currency, not by labeling the company simply as an
+exporter or importer:
+
+```text
+Net Exposure(currency)
+= receivables - payables
+```
+
+For each currency, the Treasury layer derives natural offset, open exposure and
+the unfavorable FX direction. Positive net exposure is foreign-currency
+receivable exposure; negative net exposure is foreign-currency payable
+exposure. The canonical Deal is mixed: USD is positive and JPY is negative.
+
+There is no FX forecast. A deterministic forward-hedge comparison accepts an
+actual or hypothetical bank quote supplied by the user and may use:
+
+• hedge ratio
+• hedge notional
+• forward rate
+• residual open exposure
+• hedged settlement cash flow
+• comparison with existing Stress results
+
+The simulation does not execute an FX transaction or state that hedging is
+universally better.
+
+────────
+
+27. Canonical Treasury Gate Sequence
+
+1. T1 — Financial Statement AI / Company Liquidity Profile
+2. T2 — Company Liquidity & Funding Choice
+3. T3 — FX Treasury / Forward Hedge Simulation
+4. T4 — Banker's Usance
+5. T5 — Treasury integration into Single Deal Review Agent
+6. T6 — Presentation IA RE0 / Report / Submission Final Freeze
+
+The current authorized gate is T1. Later gates are defined boundaries, not
+authorization to implement them early.
+
+────────
+
+28. Deferred Scope
+
+The following remain deferred:
+
+• full L/C workflow and UCP document compliance
+• UPAS
+• D/A / D/P engine expansion
+• FX forecasting
+• CFaR Monte Carlo
+• stochastic risk models
+• RAG
+• multi-agent architecture
+• arbitrary web search
+• Hugging Face runtime
+• insurance and guarantee execution
+• actual hedge execution
+• actual loan execution
+• bank credit approval prediction
+• buyer default prediction
+• database and authentication
+• EUR/CNY engine expansion

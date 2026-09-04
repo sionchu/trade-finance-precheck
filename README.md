@@ -1,32 +1,41 @@
 # AI Trade Finance Pre-check
 
-A pre-deal decision-support MVP for evaluating whether one export deal's margin and liquidity remain resilient under FX, delayed collection, and funding stress.
+A Company-aware Trade Treasury Pre-check for evaluating one export Deal's economics, the company's Deal-specific liquidity capacity, and currency-level FX exposure before execution.
 
 The canonical product definition is [docs/product-spec.md](docs/product-spec.md).
 
 ## Current state
 
-The repository contains the frozen deterministic Financial Engine v0.1 and
-Deal Rescue / Negotiation Solver, Streamlit Web MVP and presentation layer,
-optional AI financialization of the bundled synthetic trade-document demo,
-the bounded read-only Single Deal Review Agent, public K-SURE aggregate payment
-context, and the Deal Pre-check Report. The public Streamlit deployment is
-operational. Financial calculations remain authoritative in the Financial
-Engine and Deal Rescue Solver; AI only extracts supported facts or explains
-already-computed evidence.
+The repository contains the frozen Deal Economics foundation: deterministic
+Financial Engine v0.1, Deal Rescue / Negotiation Solver, Streamlit Web MVP and
+presentation layer, Trade Document Financialization, the bounded read-only
+Single Deal Review Agent, public K-SURE aggregate payment context, and the Deal
+Pre-check Report. The public Streamlit deployment is operational. Financial
+calculations remain authoritative in the Financial Engine and Deal Rescue
+Solver; AI only extracts supported facts or explains already-computed evidence.
 
 The Korea Eximbank reference-FX adapter passed local live validation but is
 deployment-deferred; its public Streamlit runtime path is disabled because it
 is unreliable in that target environment. The Bank of Korea ECOS funding
 benchmark and macro context are also validated and deferred.
 
-The current product gate is Submission Artifacts / Final Freeze.
+The current authorized gate is **T1 — Financial Statement AI / Company
+Liquidity Profile**. It extracts a small, explicit liquidity-oriented fact set
+for user review. It does not decide the cash available to a Deal or infer bank
+lending capacity.
+
+The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
+Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4
+Banker's Usance, T5 Treasury integration into the Single Deal Review Agent, and
+T6 Presentation IA RE0 / Report / Submission Final Freeze.
 
 ## Scope
 
-Arbitrary document upload, arbitrary web search, RAG, multi-agent systems,
-insurance, guarantees, hedge execution, databases, authentication, and EUR/CNY
-support are not part of the current scope.
+Full L/C and UPAS workflows, D/A / D/P engine expansion, FX forecasting,
+stochastic risk models, arbitrary web search, RAG, multi-agent systems,
+insurance or guarantee execution, actual hedge or loan execution, bank-credit
+approval or buyer-default prediction, databases, authentication, and EUR/CNY
+engine expansion remain deferred.
 
 ## Local run
 
