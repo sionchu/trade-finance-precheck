@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 from streamlit.testing.v1 import AppTest
 
 from src.ai.deal_review import (
+    DealReviewError,
     DealReviewMemo,
     DealReviewRun,
     SupportingSignal,
@@ -136,7 +137,10 @@ def trigger_component_review(app):
         "response_action": "none",
         "primary_action": "run_review",
     }
-    return app.run()
+    # Most web tests inspect the same execution's native result. Dedicated
+    # terminal-state tests below exercise the real automatic rerun contract.
+    with patch("streamlit.rerun"):
+        return app.run()
 
 
 def switch_stage(app, stage):
@@ -646,6 +650,81 @@ class WebMvpTests(unittest.TestCase):
         self.assertIn("회사 자금 / 자금조달 / 외화위험", visible)
         self.assertIn("K-SURE 결제 참고정보 · 불러온 공식 데이터 없음", visible)
 
+    def test_review_terminal_success_rerun_settles_shell_without_repeating_agent(self):
+        shell_data = []
+
+        def shell_once(data):
+            shell_data.append(data)
+            return {"primary_action": "run_review"} if len(shell_data) == 1 else {}
+
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
+            patch(
+                "components.trade_treasury_experience.trade_treasury_experience",
+                side_effect=shell_once,
+            ),
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10)
+            app.session_state["trade_treasury_experience"] = {
+                "active_stage": "result",
+                "review_goal": "overall",
+                "response_action": "none",
+            }
+            app.run()
+
+        review.assert_called_once()
+        self.assertEqual(app.session_state["deal_review_run"], review_result())
+        self.assertGreaterEqual(len(shell_data), 2)
+        self.assertTrue(shell_data[-1]["reviewState"]["hasResult"])
+        self.assertTrue(shell_data[-1]["reviewState"]["current"])
+        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
+        self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
+        self.assertNotIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
+        self.assertNotIn("거래 검토 결과를 준비하고 있습니다", visible)
+
+    def test_review_terminal_error_rerun_settles_without_retry(self):
+        shell_data = []
+
+        def shell_once(data):
+            shell_data.append(data)
+            return {"primary_action": "run_review"} if len(shell_data) == 1 else {}
+
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
+            patch(
+                "src.ai.deal_review.run_deal_review",
+                side_effect=DealReviewError("AI 거래 검토를 완료하지 못했습니다."),
+            ) as review,
+            patch(
+                "components.trade_treasury_experience.trade_treasury_experience",
+                side_effect=shell_once,
+            ),
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10)
+            app.session_state["trade_treasury_experience"] = {
+                "active_stage": "result",
+                "review_goal": "overall",
+                "response_action": "none",
+            }
+            app.run()
+
+        review.assert_called_once()
+        self.assertGreaterEqual(len(shell_data), 2)
+        self.assertEqual(
+            shell_data[-1]["reviewState"]["error"],
+            "AI 거래 검토를 완료하지 못했습니다.",
+        )
+        self.assertEqual(
+            app.session_state["deal_review_error"],
+            "AI 거래 검토를 완료하지 못했습니다.",
+        )
     def test_changed_deal_marks_agent_result_stale_without_another_call(self):
         with (
             patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),

@@ -1952,9 +1952,11 @@ if primary_action == "run_review" and treasury_review_ready:
             st.session_state["deal_review_error"] = (
                 "AI 거래 검토를 완료하지 못했습니다."
             )
+            st.rerun()
         else:
             st.session_state["deal_review_run"] = review_run
             st.session_state.pop("deal_review_error", None)
+            st.rerun()
 
 if active_stage in {"review", "result"} and (
     review_error := st.session_state.get("deal_review_error")
