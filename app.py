@@ -37,6 +37,11 @@ from src.finance.engine import (
     evaluate_deal,
     solve_usd_krw_threshold,
 )
+from src.finance.rescue import (
+    RescueLever,
+    RescueStatus,
+    analyze_deal_rescue,
+)
 from src.reporting.deal_report import (
     DealReportInput,
     build_deal_report,
@@ -284,6 +289,7 @@ base_result = evaluate_deal(deal, fx)
 
 scenario_results = canonical_scenarios(deal, fx)
 combined_result = scenario_results[Scenario.COMBINED]
+rescue_analysis = analyze_deal_rescue(deal, fx)
 usd_stress_result = scenario_results[Scenario.USD_DOWN_5]
 peak_point = max(
     base_result.funding.points,
@@ -599,6 +605,96 @@ for index, (scenario, result) in enumerate(scenario_results.items()):
 with st.expander("상세 수치 보기"):
     st.dataframe(scenario_rows, hide_index=True, width="stretch")
 
+st.subheader("이 거래를 목표 수준으로 만들려면?")
+st.badge("조건 역산 · 미래 예측 아님", color="orange")
+if not rescue_analysis.needs_rescue:
+    st.success(
+        "현재 복합 Stress에서도 목표 마진을 충족합니다. "
+        "추가 조건 역산이 필요하지 않습니다."
+    )
+else:
+    st.markdown(
+        f"복합 Stress에서는 실제로 남는 마진이 "
+        f"{percent(rescue_analysis.baseline_margin)}로, "
+        f"목표 {percent(rescue_analysis.target_margin)}에 미달합니다."
+    )
+    st.caption(
+        "아래 값은 한 번에 한 조건만 바꿨을 때 목표마진을 다시 충족하는 "
+        "경계값입니다."
+    )
+    rescue_options = {option.lever: option for option in rescue_analysis.options}
+    rescue_cards = st.columns(3)
+    sale_rescue = rescue_options[RescueLever.SALE_AMOUNT_USD]
+    usd_cost_rescue = rescue_options[RescueLever.USD_PAYABLE_AMOUNT]
+    jpy_cost_rescue = rescue_options[RescueLever.JPY_PAYABLE_AMOUNT]
+
+    with rescue_cards[0].container(border=True):
+        st.markdown("#### 수출가격 기준")
+        st.write(f"현재  **USD {sale_rescue.current_value:,.0f}**")
+        if sale_rescue.status is RescueStatus.FEASIBLE:
+            sale_change = sale_rescue.threshold_value - sale_rescue.current_value
+            sale_change_ratio = sale_change / sale_rescue.current_value
+            st.metric(
+                "목표마진 충족 기준",
+                f"최소 USD {sale_rescue.threshold_value:,.0f}",
+            )
+            st.write(
+                f"변화  **+USD {sale_change:,.0f} · "
+                f"+{percent(sale_change_ratio)}**"
+            )
+
+    with rescue_cards[1].container(border=True):
+        st.markdown("#### USD 원재료비 기준")
+        st.write(f"현재  **USD {usd_cost_rescue.current_value:,.0f}**")
+        if usd_cost_rescue.status is RescueStatus.FEASIBLE:
+            usd_change = usd_cost_rescue.threshold_value - usd_cost_rescue.current_value
+            usd_change_ratio = usd_change / usd_cost_rescue.current_value
+            st.metric(
+                "목표마진 충족 기준",
+                f"최대 USD {usd_cost_rescue.threshold_value:,.0f}",
+            )
+            st.write(
+                f"변화  **-USD {abs(usd_change):,.0f} · "
+                f"{percent(usd_change_ratio)}**"
+            )
+
+    with rescue_cards[2].container(border=True):
+        st.markdown("#### JPY 부품비 기준")
+        st.write(f"현재  **JPY {jpy_cost_rescue.current_value:,.0f}**")
+        if jpy_cost_rescue.status is RescueStatus.FEASIBLE:
+            jpy_change = jpy_cost_rescue.threshold_value - jpy_cost_rescue.current_value
+            jpy_change_ratio = jpy_change / jpy_cost_rescue.current_value
+            st.metric(
+                "목표마진 충족 기준",
+                f"최대 JPY {jpy_cost_rescue.threshold_value:,.0f}",
+            )
+            st.write(
+                f"변화  **-JPY {abs(jpy_change):,.0f} · "
+                f"{percent(jpy_change_ratio)}**"
+            )
+
+    infeasible = {
+        option.lever
+        for option in rescue_analysis.options
+        if option.status is RescueStatus.INFEASIBLE
+    }
+    if infeasible:
+        st.markdown("#### 단독 변경만으로 목표마진을 회복하기 어려운 조건")
+        if RescueLever.COLLECTION_DAY in infeasible:
+            st.write(
+                f"- 결제기간 단축만으로는 복합 Stress에서 목표 "
+                f"{percent(deal.target_margin)} 회복 불가"
+            )
+        if RescueLever.FUNDING_RATE in infeasible:
+            st.write(
+                f"- 조달금리 인하만으로는 복합 Stress에서 목표 "
+                f"{percent(deal.target_margin)} 회복 불가"
+            )
+    st.caption(
+        "가격·원가·결제조건의 실제 협상 가능성을 판단하거나 계약 체결을 "
+        "권고하는 기능이 아닙니다."
+    )
+
 st.subheader("돈은 언제 가장 많이 필요할까요?")
 st.badge("계산 결과", color="blue")
 st.markdown(f"**돈이 가장 많이 필요한 시점은 D+{peak_point.day}입니다.**")
@@ -696,7 +792,10 @@ else:
         st.info("판단 포인트: 빠른 유동성 확보와 명시적 매입·할인비용 간의 교환관계입니다.")
 
 st.subheader("공식 시장 참고정보")
-st.write("공식 데이터는 명시적으로 불러오며, 현재 거래에는 사용자가 선택할 때만 반영됩니다.")
+st.write(
+    "공식 데이터는 명시적으로 불러옵니다. K-SURE 정보는 참고 Context로만 "
+    "사용되며 거래조건이나 결제일을 자동으로 변경하지 않습니다."
+)
 with st.container(border=True):
     st.markdown("#### 미국 기계업종의 실제 결제 참고정보")
     st.badge("공식 데이터", color="green")

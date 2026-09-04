@@ -155,6 +155,7 @@ class WebMvpTests(unittest.TestCase):
             "이 거래, 현재 조건에서 버틸까요?",
             "거래서류로 자동 입력하기",
             "조건이 나빠지면 어떻게 될까요?",
+            "이 거래를 목표 수준으로 만들려면?",
             "돈은 언제 가장 많이 필요할까요?",
             "고객 입금일까지 기다릴까, 먼저 현금화할까?",
             "공식 시장 참고정보",
@@ -163,6 +164,31 @@ class WebMvpTests(unittest.TestCase):
         ]
         positions = [headings.index(label) for label in expected_order]
         self.assertEqual(positions, sorted(positions))
+
+    def test_canonical_rescue_boundaries_are_visible(self):
+        app, _, _, _ = self.render_without_credentials()
+        visible = "\n".join(
+            item.value
+            for item in (*app.markdown, *app.metric, *app.caption, *app.error)
+        )
+        self.assertIn(
+            "이 거래를 목표 수준으로 만들려면?",
+            [item.value for item in app.subheader],
+        )
+        self.assertIn("8.83%", visible)
+        self.assertIn("최소 USD 106,017", visible)
+        self.assertIn("최대 USD 14,898", visible)
+        self.assertIn("최대 JPY 2,314,602", visible)
+        self.assertIn("결제기간 단축만으로는", visible)
+        self.assertIn("조달금리 인하만으로는", visible)
+
+    def test_lower_target_hides_rescue_cards(self):
+        app, _, _, _ = self.render_without_credentials({"목표 마진 (%)": 8.0})
+        visible = "\n".join(
+            item.value for item in (*app.markdown, *app.metric, *app.success)
+        )
+        self.assertIn("추가 조건 역산이 필요하지 않습니다", visible)
+        self.assertNotIn("최소 USD 106,017", visible)
 
     def test_report_download_is_available_without_credentials(self):
         app, _, _, _ = self.render_without_credentials()

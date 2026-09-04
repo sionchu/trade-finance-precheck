@@ -12,6 +12,7 @@ Implementation State
 FROZEN / IMPLEMENTED:
 
 • Financial Engine v0.1
+• Deal Rescue / Negotiation Solver
 • Deterministic End-to-End Web MVP
 • Accepted KRDS/Toss-inspired presentation layer
 • AI Financialization
@@ -26,11 +27,13 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• Deal Rescue / Negotiation Solver
+• Single Deal Review Agent — one bounded read-only agent that consumes the current Deal state, deterministic finance / stress / rescue outputs and already-loaded K-SURE context to produce a grounded Deal Review memo
+• The agent never performs authoritative financial calculations, mutates the Deal or executes finance
 
 DEFERRED:
 
 • AI plain-Korean explanation
+• RAG, multi-agent architecture and arbitrary web search
 • Bank of Korea ECOS adapter
 • EUR/CNY engine expansion
 • Insurance, guarantees and hedge engine
