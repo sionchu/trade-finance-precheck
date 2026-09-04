@@ -30,12 +30,48 @@ def _register_component():
 _experience_shell = _register_component()
 
 STAGES = (
-    {"id": "deal", "label": "거래 조건", "status": "active"},
-    {"id": "liquidity", "label": "회사 유동성", "status": "upcoming"},
-    {"id": "treasury", "label": "Treasury 검토", "status": "upcoming"},
-    {"id": "review", "label": "AI 거래 검토", "status": "upcoming"},
-    {"id": "result", "label": "결과 / 공유", "status": "upcoming"},
+    {"id": "deal", "label": "거래 조건"},
+    {"id": "liquidity", "label": "회사 유동성"},
+    {"id": "treasury", "label": "Treasury 검토"},
+    {"id": "review", "label": "AI 거래 검토"},
+    {"id": "result", "label": "결과 / 공유"},
 )
+REVIEW_GOALS = (
+    {"id": "overall", "label": "전체 거래"},
+    {"id": "liquidity", "label": "회사 유동성"},
+    {"id": "fx", "label": "외화위험"},
+    {"id": "funding", "label": "자금조달 구조"},
+)
+RESPONSE_ACTIONS = (
+    {"id": "price", "label": "가격·원가 조건"},
+    {"id": "receivable", "label": "매출채권 조기현금화"},
+    {"id": "credit", "label": "운전자금 한도"},
+    {"id": "forward", "label": "선물환"},
+    {"id": "usance", "label": "Banker's Usance"},
+)
+VALID_STAGES = {stage["id"] for stage in STAGES}
+VALID_REVIEW_GOALS = {goal["id"] for goal in REVIEW_GOALS}
+VALID_RESPONSE_ACTIONS = {"none", *(action["id"] for action in RESPONSE_ACTIONS)}
+
+
+def get_experience_state(key: str = "trade_treasury_experience") -> dict[str, str]:
+    persisted = st.session_state.get(key, {})
+    def read(name: str, default: str) -> str:
+        if isinstance(persisted, Mapping):
+            value = persisted.get(name, default)
+        else:
+            value = getattr(persisted, name, default)
+        return str(value)
+    active_stage = read("active_stage", "deal")
+    review_goal = read("review_goal", "overall")
+    response_action = read("response_action", "none")
+    return {
+        "active_stage": active_stage if active_stage in VALID_STAGES else "deal",
+        "review_goal": review_goal if review_goal in VALID_REVIEW_GOALS else "overall",
+        "response_action": (
+            response_action if response_action in VALID_RESPONSE_ACTIONS else "none"
+        ),
+    }
 
 
 def company_cash_events_from_rows(rows) -> tuple[CompanyCashEvent, ...]:
@@ -86,6 +122,9 @@ def build_experience_data(
     remaining_gap: str,
     remaining_gap_detail: str,
     remaining_gap_status: str,
+    stage_states: Mapping[str, str] | None = None,
+    deal_facts: list[dict[str, str]] | None = None,
+    review_status: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the presentation contract from already-formatted Python values."""
     return {
@@ -96,7 +135,14 @@ def build_experience_data(
                 "유동성·외화·자금조달 조건을 검토합니다."
             ),
         },
-        "stages": [dict(stage) for stage in STAGES],
+        "stages": [
+            {**stage, "state": (stage_states or {}).get(stage["id"], "ready")}
+            for stage in STAGES
+        ],
+        "reviewGoals": [dict(goal) for goal in REVIEW_GOALS],
+        "responseActions": [dict(action) for action in RESPONSE_ACTIONS],
+        "dealFacts": deal_facts or [],
+        "reviewState": dict(review_status or {}),
         "snapshot": [
             {
                 "label": "현재 Deal 마진",
@@ -138,19 +184,24 @@ def trade_treasury_experience(
 ):
     """Mount the presentation-only Treasury shell."""
     global _experience_shell
-    persisted = st.session_state.get(key, {})
-    if isinstance(persisted, Mapping):
-        active_stage = persisted.get("active_stage", "deal")
-    else:
-        active_stage = getattr(persisted, "active_stage", "deal")
-    if active_stage not in {stage["id"] for stage in STAGES}:
-        active_stage = "deal"
-    component_data = {**data, "activeStage": active_stage}
+    state = get_experience_state(key)
+    component_data = {
+        **data,
+        "activeStage": state["active_stage"],
+        "reviewGoal": state["review_goal"],
+        "responseAction": state["response_action"],
+    }
     mount_args = {
         "key": key,
         "data": component_data,
-        "default": {"active_stage": "deal"},
+        "default": {
+            "active_stage": "deal",
+            "review_goal": "overall",
+            "response_action": "none",
+        },
         "on_active_stage_change": lambda: None,
+        "on_review_goal_change": lambda: None,
+        "on_response_action_change": lambda: None,
         "on_primary_action_change": lambda: None,
     }
     try:

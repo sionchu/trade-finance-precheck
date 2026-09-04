@@ -34,7 +34,7 @@ Use Lucide outline icons at 18–20px. Icons supplement visible Korean labels an
 - Stage navigation uses real buttons with visible `:focus-visible` rings.
 - Snapshot cards contain one label, one authoritative formatted value, and one concise status or context line.
 - Warning and success states include explicit text such as `부족`, `한도 내`, or `목표 충족`.
-- Data-dense tables remain native Streamlit in T6-B.
+- Data-dense tables remain native Streamlit in the guided stage content.
 
 ## Interaction
 
@@ -59,4 +59,8 @@ Maintain keyboard navigation, visible focus, semantic buttons and headings, read
 
 ## Implementation notes
 
-The canonical React tokens live in `components/trade_treasury_experience/frontend/src/styles.css`. New visual values must extend those semantic roles instead of adding scattered literals. The Streamlit page remains the behavior and finance authority during T6-B.
+The canonical React tokens live in `components/trade_treasury_experience/frontend/src/styles.css`. New visual values must extend those semantic roles instead of adding scattered literals. The internal precompiled Streamlit Components v2 React bundle owns orientation and user intent; Streamlit/Python remains the behavior and finance authority.
+
+## Guided decision loop
+
+The five-stage experience follows condition → choice → review → result → response. `review_goal` records user intent and `response_action` records the next comparison the user chose; neither is an AI recommendation or financial input. Tool completion is shown only from a completed Agent run, never from timers or simulated progress.

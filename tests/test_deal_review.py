@@ -30,6 +30,15 @@ from src.finance.engine import (
     evaluate_deal,
 )
 from src.finance.fx_treasury import ForwardHedgeInput, analyze_fx_treasury
+from src.finance.company_liquidity import (
+    CompanyCashEvent,
+    CompanyCashEventCategory,
+    CompanyCashEventSource,
+    CompanyCashEventStatus,
+    CompanyLiquidityInput,
+    analyze_company_liquidity,
+    compare_company_gap_to_credit_line,
+)
 from src.finance.liquidity import WorkingCapitalCreditLine, analyze_company_funding
 from src.finance.rescue import RescueLever, analyze_deal_rescue
 from src.finance.usance import BankersUsanceInput, analyze_bankers_usance
@@ -96,7 +105,21 @@ def canonical_treasury(deal=None, fx=None, *, include_profile=True):
         if include_profile
         else None
     )
-    return TreasuryReviewContext(profile, funding, fx_treasury, usance)
+    events = (
+        CompanyCashEvent(date(2026, 9, 24), CompanyCashEventCategory.AR_COLLECTION, Decimal("40000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "기존 매출채권 A"),
+        CompanyCashEvent(date(2026, 10, 4), CompanyCashEventCategory.PAYROLL_TAX, Decimal("-50000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "급여·세금"),
+        CompanyCashEvent(date(2026, 10, 19), CompanyCashEventCategory.AR_COLLECTION, Decimal("20000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "기존 매출채권 B"),
+        CompanyCashEvent(date(2026, 11, 3), CompanyCashEventCategory.CAPEX, Decimal("-30000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "확정 설비대금"),
+    )
+    timeline = analyze_company_liquidity(
+        liquidity_input=CompanyLiquidityInput(
+            date(2026, 9, 4), Decimal("120000000"), Decimal("70000000"), events
+        ),
+        deal=deal,
+        fx=fx,
+    )
+    capacity = compare_company_gap_to_credit_line(timeline.company_with_deal, line)
+    return TreasuryReviewContext(profile, funding, fx_treasury, usance, timeline, capacity)
 
 
 def calls(names=TOOL_NAMES):
@@ -248,6 +271,14 @@ class DealReviewTests(unittest.TestCase):
         self.assertEqual(usance["usance_ordinary_working_capital_peak_krw"], "42000000")
         self.assertEqual(usance["peak_combined_bank_principal_krw"], "69000000")
         self.assertEqual(usance["financing_cost_difference_krw"], "40500.0000000000000000000000")
+        timeline = payload["company_cash_timeline"]
+        self.assertEqual(timeline["company_without_deal_peak_gap_krw"], "0")
+        self.assertEqual(timeline["company_with_deal_peak_gap_krw"], "89000000")
+        self.assertEqual(timeline["incremental_peak_gap_from_deal_krw"], "89000000")
+        self.assertEqual(timeline["peak_gap_date"], "2026-11-03")
+        self.assertEqual(timeline["peak_gap_day_offset"], 60)
+        self.assertEqual(timeline["unused_credit_limit_krw"], "70000000")
+        self.assertEqual(timeline["residual_gap_after_credit_krw"], "19000000")
 
     def test_absent_treasury_subsections_are_loaded_false(self):
         empty = TreasuryReviewContext(None, None, None, None)

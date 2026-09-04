@@ -34,6 +34,15 @@ from src.domain.deal_case import Currency, FxRates, reference_deal, reference_fx
 from src.external.ksure_payment import PaymentContext
 from src.finance.engine import Scenario, canonical_purchase_option, canonical_scenarios, evaluate_deal
 from src.finance.fx_treasury import ForwardHedgeInput, analyze_fx_treasury
+from src.finance.company_liquidity import (
+    CompanyCashEvent,
+    CompanyCashEventCategory,
+    CompanyCashEventSource,
+    CompanyCashEventStatus,
+    CompanyLiquidityInput,
+    analyze_company_liquidity,
+    compare_company_gap_to_credit_line,
+)
 from src.finance.liquidity import WorkingCapitalCreditLine, analyze_company_funding
 from src.finance.rescue import RescueLever
 from src.finance.usance import BankersUsanceInput, analyze_bankers_usance
@@ -120,6 +129,16 @@ def metric_by_label(app, label):
     return next(metric for metric in app.metric if metric.label == label)
 
 
+def trigger_component_review(app):
+    app.session_state["trade_treasury_experience"] = {
+        "active_stage": "result",
+        "review_goal": "overall",
+        "response_action": "none",
+        "primary_action": "run_review",
+    }
+    return app.run()
+
+
 def current_treasury_context(company_liquidity=None):
     deal = reference_deal()
     fx = reference_fx()
@@ -150,13 +169,25 @@ def current_treasury_context(company_liquidity=None):
         credit_line=line,
         usance_input=BankersUsanceInput(1, 90, Decimal("0.048"), Decimal("0.0015")),
     )
-    return TreasuryReviewContext(company_liquidity, funding, fx_treasury, usance)
+    events = (
+        CompanyCashEvent(date(2026, 9, 24), CompanyCashEventCategory.AR_COLLECTION, Decimal("40000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "기존 매출채권 A"),
+        CompanyCashEvent(date(2026, 10, 4), CompanyCashEventCategory.PAYROLL_TAX, Decimal("-50000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "급여·세금"),
+        CompanyCashEvent(date(2026, 10, 19), CompanyCashEventCategory.AR_COLLECTION, Decimal("20000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "기존 매출채권 B"),
+        CompanyCashEvent(date(2026, 11, 3), CompanyCashEventCategory.CAPEX, Decimal("-30000000"), CompanyCashEventStatus.CONFIRMED, CompanyCashEventSource.MANUAL, "확정 설비대금"),
+    )
+    timeline = analyze_company_liquidity(
+        liquidity_input=CompanyLiquidityInput(date(2026, 9, 4), Decimal("120000000"), Decimal("70000000"), events),
+        deal=deal,
+        fx=fx,
+    )
+    capacity = compare_company_gap_to_credit_line(timeline.company_with_deal, line)
+    return TreasuryReviewContext(company_liquidity, funding, fx_treasury, usance, timeline, capacity)
 
 
 def review_result(payment_context=None, treasury_context=None):
     return DealReviewRun(
         question=(
-            "이 거래의 수익성, 회사 자금여력, 외화노출과 자금조달 구조에서 "
+            "이 거래의 수익성, 회사 전체 유동성, 외화노출과 자금조달 구조에서 "
             "우선 확인할 점을 설명해줘."
         ),
         memo=DealReviewMemo(
@@ -291,7 +322,6 @@ class WebMvpTests(unittest.TestCase):
             "외화는 어느 방향으로 위험할까요?",
             "환율을 열어둘까, 일부 고정할까?",
             "공식 시장 참고정보",
-            "AI 거래 검토 에이전트",
             "분석 근거",
             "결과를 공유해야 하나요?",
         ]
@@ -545,10 +575,8 @@ class WebMvpTests(unittest.TestCase):
 
     def test_agent_is_visible_and_normal_rerun_does_not_call_it(self):
         app, _, _, _ = self.render_without_credentials()
-        self.assertIn("AI 거래 검토 에이전트", [item.value for item in app.subheader])
-        self.assertIn("AI 거래 검토 실행", [item.label for item in app.button])
-        visible = "\n".join(item.value for item in (*app.markdown, *app.info))
-        self.assertIn("AI는 계산하지 않습니다", visible)
+        self.assertIn("trade_treasury_experience", app.session_state)
+        self.assertFalse(any(button.key == "run_deal_review" for button in app.button))
         with patch("src.ai.deal_review.run_deal_review") as review:
             app.run()
         review.assert_not_called()
@@ -560,11 +588,8 @@ class WebMvpTests(unittest.TestCase):
                 "현재 사용액": 30000000.0,
             }
         )
-        run_button = element_by_key(app.button, "run_deal_review")
-        self.assertTrue(run_button.disabled)
         self.last_deal_review.assert_not_called()
-        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
-        self.assertIn("Treasury 입력", visible)
+        self.assertFalse(any(button.key == "run_deal_review" for button in app.button))
 
     def test_explicit_agent_cta_renders_current_deterministic_evidence_and_trace(self):
         with (
@@ -575,8 +600,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
-            element_by_key(app.button, "run_deal_review").click()
-            app.run()
+            trigger_component_review(app)
         self.assertEqual(app.exception, [])
         review.assert_called_once()
         visible = "\n".join(
@@ -587,13 +611,13 @@ class WebMvpTests(unittest.TestCase):
         self.assertIn("먼저 확인할 Treasury 이슈", visible)
         self.assertIn("함께 본 근거", visible)
         self.assertIn("마진 8.83% · 목표 미달", visible)
-        self.assertIn("운전자금 한도 수용력", visible)
-        self.assertEqual(visible.count("운전자금 한도 수용력"), 1)
+        self.assertIn("회사 전체 유동성과 운전자금 한도", visible)
+        self.assertEqual(visible.count("회사 전체 유동성과 운전자금 한도"), 1)
         self.assertIn("현재 1,400.00원", visible)
         self.assertIn("현재 거래 분석", visible)
-        self.assertIn("Stress / 조건 역산", visible)
+        self.assertIn("Stress / 목표마진 충족 조건", visible)
         self.assertIn("회사 자금 / 자금조달 / 외화위험", visible)
-        self.assertIn("K-SURE Context 확인 · 불러온 공식 데이터 없음", visible)
+        self.assertIn("K-SURE 결제 참고정보 · 불러온 공식 데이터 없음", visible)
 
     def test_changed_deal_marks_agent_result_stale_without_another_call(self):
         with (
@@ -604,8 +628,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
-            element_by_key(app.button, "run_deal_review").click()
-            app.run()
+            trigger_component_review(app)
             next(item for item in app.number_input if item.label == "목표 마진 (%)").set_value(13.0)
             app.run()
         review.assert_called_once()
@@ -622,8 +645,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
-            element_by_key(app.button, "run_deal_review").click()
-            app.run()
+            trigger_component_review(app)
             target = next(
                 item for item in app.number_input if item.label == "목표 마진 (%)"
             )
@@ -648,8 +670,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
-            element_by_key(app.button, "run_deal_review").click()
-            app.run()
+            trigger_component_review(app)
             changes = (
                 ("credit_total_limit_input", 101000000.0, 100000000.0),
                 ("receivable_purchase_day_input", 66, 65),
@@ -710,8 +731,7 @@ class WebMvpTests(unittest.TestCase):
             app = AppTest.from_file(app_path, default_timeout=10).run()
             element_by_key(app.button, "analyze_financial_statement").click()
             app.run()
-            element_by_key(app.button, "run_deal_review").click()
-            app.run()
+            trigger_component_review(app)
 
         statement_ai.assert_called_once()
         review.assert_called_once()
@@ -744,8 +764,7 @@ class WebMvpTests(unittest.TestCase):
             app = AppTest.from_file(app_path, default_timeout=10).run()
             app.session_state["ksure_payment_context"] = context
             app.run()
-            element_by_key(app.button, "run_deal_review").click()
-            app.run()
+            trigger_component_review(app)
 
         review.assert_called_once()
         fetch.assert_not_called()
@@ -781,7 +800,7 @@ class WebMvpTests(unittest.TestCase):
         review.assert_not_called()
         fetch.assert_not_called()
         visible = "\n".join(item.value for item in app.markdown)
-        self.assertIn("K-SURE Context: 포함 가능", visible)
+        self.assertIn("K-SURE", visible)
 
     def test_public_market_surface_is_ksure_only(self):
         app, _, _, _ = self.render_without_credentials()

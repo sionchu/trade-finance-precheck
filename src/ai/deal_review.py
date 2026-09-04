@@ -15,6 +15,10 @@ from src.ai.financial_statement import CompanyLiquidityProfile
 from src.domain.deal_case import Currency, DealCase, FxRates
 from src.external.ksure_payment import PaymentContext
 from src.finance.engine import DealResult, Scenario
+from src.finance.company_liquidity import (
+    CompanyDealLiquidityComparison,
+    CompanyLiquidityCreditCapacity,
+)
 from src.finance.fx_treasury import FxTreasuryAnalysis
 from src.finance.liquidity import CompanyFundingAnalysis
 from src.finance.rescue import DealRescueAnalysis, RescueLever
@@ -94,6 +98,8 @@ class TreasuryReviewContext:
     company_funding: CompanyFundingAnalysis | None
     fx_treasury: FxTreasuryAnalysis | None
     bankers_usance: BankersUsanceComparison | None
+    company_cash_timeline: CompanyDealLiquidityComparison | None = None
+    company_cash_capacity: CompanyLiquidityCreditCapacity | None = None
 
 
 @dataclass(frozen=True)
@@ -129,6 +135,10 @@ AGENT_INSTRUCTIONS = """당신은 단일 수출거래를 검토하는 읽기 전
 Banker's Usance는 자금조달 시뮬레이션이지 결제방식, 완전한 L/C 또는 UPAS가 아닙니다.
 승인과 한도는 알 수 없고, 일반 운전자금 감소가 총 은행채무 소멸을 뜻하지 않으며 FX를
 자동 헤지하지도 않습니다. Usance 사용을 추천하지 마세요.
+Company-wide Timeline은 Treasury가 확인한 현재 가용현금, 기존 회사 자금계획과
+prospective Deal을 함께 봅니다. Deal별 배정자금과 구분하며, 기본 근거는 CONFIRMED
+이벤트만 포함합니다. 사용자가 EXPECTED를 포함한 경우 이는 시나리오이지 AI 예측이
+아닙니다. 회사 전체 유동성 부족은 은행 승인이나 부도 예측이 아닙니다.
 treasury_focus는 현재 loaded=true인 Treasury 항목 중 정확히 하나를 고르세요. 이는 추천이나
 상품선택이 아니라 먼저 확인할 검토 주제입니다. supporting_signals는 항상 제공되는 거래
 분석 근거 중 이를 뒷받침할 항목입니다. headline과 summary에는 아라비아 숫자를 포함한
@@ -430,8 +440,42 @@ def _treasury_context_payload(
             ),
         }
 
+    timeline = treasury_context.company_cash_timeline
+    capacity = treasury_context.company_cash_capacity
+    company_cash_timeline = {"loaded": False}
+    if timeline is not None and capacity is not None:
+        with_deal = timeline.company_with_deal
+        peak_point = next(
+            point
+            for point in with_deal.points
+            if point.event_date == with_deal.peak_liquidity_gap_date
+        )
+        company_cash_timeline = {
+            "loaded": True,
+            "as_of_date": with_deal.as_of_date.isoformat(),
+            "company_without_deal_peak_gap_krw": str(
+                timeline.company_without_deal.peak_liquidity_gap_krw
+            ),
+            "company_with_deal_peak_gap_krw": str(with_deal.peak_liquidity_gap_krw),
+            "incremental_peak_gap_from_deal_krw": str(
+                timeline.incremental_peak_gap_from_deal_krw
+            ),
+            "peak_gap_date": with_deal.peak_liquidity_gap_date.isoformat(),
+            "peak_gap_day_offset": peak_point.day_offset,
+            "ending_projected_cash_krw": str(with_deal.ending_projected_cash_krw),
+            "unused_credit_limit_krw": str(capacity.unused_credit_limit_krw),
+            "residual_gap_after_credit_krw": str(capacity.liquidity_gap_krw),
+            "feasible_with_current_line": capacity.feasible,
+            "semantic_warnings": (
+                "회사 전체 Timeline은 Deal별 배정자금과 별도입니다.",
+                "기본 결과는 CONFIRMED 이벤트만 포함합니다.",
+                "유동성 부족은 은행 승인 또는 부도 예측이 아닙니다.",
+            ),
+        }
+
     return {
         "company_liquidity": company_liquidity,
+        "company_cash_timeline": company_cash_timeline,
         "company_funding": company_funding,
         "fx_treasury": fx_treasury,
         "bankers_usance": bankers_usance,

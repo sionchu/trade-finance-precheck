@@ -3,6 +3,8 @@ from pathlib import Path
 import unittest
 
 from components.trade_treasury_experience import (
+    RESPONSE_ACTIONS,
+    REVIEW_GOALS,
     STAGES,
     build_experience_data,
     company_cash_events_from_rows,
@@ -26,7 +28,11 @@ class ExperienceShellTests(unittest.TestCase):
             [stage["id"] for stage in STAGES],
             ["deal", "liquidity", "treasury", "review", "result"],
         )
-        self.assertEqual(STAGES[0]["status"], "active")
+        self.assertEqual([goal["id"] for goal in REVIEW_GOALS], ["overall", "liquidity", "fx", "funding"])
+        self.assertEqual(
+            ["none", *(action["id"] for action in RESPONSE_ACTIONS)],
+            ["none", "price", "receivable", "credit", "forward", "usance"],
+        )
 
     def test_python_supplies_canonical_formatted_snapshot(self):
         data = build_experience_data(
@@ -42,6 +48,7 @@ class ExperienceShellTests(unittest.TestCase):
         )
         self.assertEqual([item["value"] for item in data["snapshot"]], ["14.64%", "6,900만원", "8,900만원", "1,900만원"])
         self.assertEqual(data["insight"]["company"], "8,900만원 필요")
+        self.assertEqual(data["reviewGoals"], list(REVIEW_GOALS))
 
     def test_frontend_has_no_finance_or_ai_dependency(self):
         source = "\n".join(
@@ -51,6 +58,11 @@ class ExperienceShellTests(unittest.TestCase):
         for forbidden in ("src.finance", "evaluate_deal", "openai", "ksure"):
             self.assertNotIn(forbidden, source)
         self.assertIn('active_stage: stageid', source)
+        self.assertIn('review_goal: reviewgoal', source)
+        self.assertIn('response_action: responseaction', source)
+        self.assertNotIn('"continue"', source)
+        self.assertNotIn("settimeout", source)
+        self.assertNotIn("추천", source)
         self.assertIn('"deal"', source)
 
     def test_imported_rows_survive_bridge_as_erp_import(self):

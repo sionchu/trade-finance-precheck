@@ -57,13 +57,14 @@ deterministically when loaded, not selected by the model. Numeric evidence
 remains rendered from deterministic application state.
 
 The current authorized gate is **T6 — Final Product Completion / Presentation IA
-RE0 / Report / Submission Freeze**. T6-A and T6-B are implemented and frozen.
+RE0 / Report / Submission Freeze**. T6-A, T6-B, and T6-C are implemented and frozen.
 The company-wide liquidity timeline combines Treasury-confirmed current cash,
 existing confirmed cash-plan events, and the prospective Deal's frozen dated
 cashflows. The React Experience Shell adds five-stage navigation and a compact
 current-state summary while Python remains authoritative for every financial
-value. The next authorized slice is T6-C — Guided Decision / Agent UX
-Orchestration.
+value. The internal precompiled Streamlit Components v2 React bundle now guides
+condition → choice → review → result → response while Python remains authoritative.
+The next authorized slice is T6-D — Report / Submission / Final Product Freeze.
 
 The Treasury gate sequence is T1 Company Liquidity Profile, T2 Company
 Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4

@@ -35,7 +35,8 @@ VALIDATED / DEFERRED:
 CURRENT GATE:
 
 • T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze
-• Next authorized slice: T6-C — Guided Decision / Agent UX Orchestration
+• T6-C Guided Decision / Agent UX Orchestration — IMPLEMENTED / FROZEN
+• Next authorized slice: T6-D — Report / Submission / Final Product Freeze
 
 DEFERRED:
 
@@ -1508,8 +1509,8 @@ T6 authorizes:
 • later Agent UX orchestration
 • later report and submission finalization
 
-T1–T5, T6-A and T6-B are implemented and frozen. The next authorized slice is
-T6-C — Guided Decision / Agent UX Orchestration. No separate T7 is defined.
+T1–T5 and T6-A through T6-C are implemented and frozen. The next authorized
+slice is T6-D — Report / Submission / Final Product Freeze. No separate T7 is defined.
 
 ────────
 
@@ -1640,7 +1641,7 @@ frozen.
 
 31. T6-B — React Experience Shell
 
-T6-B adds one internal React and TypeScript Streamlit Components v2 shell. It
+T6-B adds one internal precompiled Streamlit Components v2 React and TypeScript bundle. It
 establishes exactly five presentation stages: 거래 조건, 회사 유동성, Treasury
 검토, AI 거래 검토, and 결과 / 공유. `active_stage` is persistent component UI
 state; one optional `primary_action` trigger is reserved for experience wiring
@@ -1661,6 +1662,12 @@ The company cash-plan UI bridge preserves `MANUAL` and `ERP_IMPORT` source
 provenance through editable presentation rows; source is read-only. This does
 not change the frozen Company Liquidity Timeline calculation.
 
-T6-B does not relocate or remove the existing native Streamlit sections. Full
-guided orchestration is the next authorized slice: T6-C — Guided Decision /
-Agent UX Orchestration.
+T6-B did not relocate or remove the existing native Streamlit sections.
+T6-C adds guided orchestration without changing finance: condition → user choice
+→ bounded review → result → user-selected response comparison. `active_stage`,
+`review_goal`, and `response_action` are component state; React never calculates
+finance. The existing Treasury evidence tool now also reads the deterministic
+Company Liquidity Timeline and current-line capacity. No new Agent, tool, retry,
+or simulated tool-progress sequence is introduced.
+
+The next authorized slice is T6-D — Report / Submission / Final Product Freeze.

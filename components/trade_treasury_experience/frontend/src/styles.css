@@ -39,6 +39,7 @@
 .stage:focus-visible, .primary-action:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary), transparent 65%); outline-offset: 2px; }
 .stage--complete { color: var(--success); }
 .stage--active, .stage[aria-current="step"] { color: var(--primary); }
+.stage--blocked, .stage:disabled { color: var(--text-secondary); cursor: not-allowed; opacity: 0.48; }
 .stage-indicator { position: absolute; right: 12px; bottom: 0; left: 12px; height: 3px; border-radius: 999px; background: var(--primary); }
 
 .snapshot-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.8rem; }
@@ -58,13 +59,26 @@
 .insight strong { margin-top: 0.25rem; font-size: 1rem; }
 
 .primary-action { min-height: 44px; margin-top: 1rem; padding: 0 1rem; border: 1px solid var(--primary); border-radius: var(--radius-sm); background: var(--primary); color: white; font: inherit; font-weight: 700; cursor: pointer; }
+.primary-action:disabled { cursor: not-allowed; opacity: 0.5; }
+.stage-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-subtle); }
+.stage-panel h2 { margin: 0 0 1rem; font-size: 1.15rem; }
+.stage-panel h3 { margin: 1rem 0 0.55rem; font-size: 1rem; }
+.support { color: var(--text-secondary); line-height: 1.6; }
+.error { color: var(--danger); font-weight: 650; }
+.fact-grid, .choice-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.7rem; }
+.fact-grid div { min-width: 0; padding: 0.8rem; border-radius: var(--radius-sm); background: var(--surface); }
+.fact-grid span, .fact-grid small { display: block; color: var(--text-secondary); }
+.fact-grid strong { display: block; margin: 0.25rem 0; overflow-wrap: anywhere; }
+.choice { min-height: 48px; padding: 0.65rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-primary); font: inherit; font-weight: 650; cursor: pointer; }
+.choice--selected { border-color: var(--primary); color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.choice:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary), transparent 65%); outline-offset: 2px; }
 
 @media (max-width: 720px) {
   .experience { margin-inline: 0; padding: 1.15rem; border-radius: 18px; }
   .hero > p:last-child { font-size: 1rem; }
   .stages { margin-block: 1.25rem; }
   .stage { min-width: 132px; justify-content: flex-start; padding-inline: 0.8rem; }
-  .snapshot-grid, .insight { grid-template-columns: 1fr; }
+  .snapshot-grid, .insight, .fact-grid, .choice-grid { grid-template-columns: 1fr; }
   .snapshot-card > span { min-height: auto; font-size: 1rem; }
   .snapshot-card small { font-size: 0.9rem; }
   .insight div + div { border-top: 1px solid var(--border); border-left: 0; }
