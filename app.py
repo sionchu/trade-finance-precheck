@@ -1,7 +1,8 @@
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -27,7 +28,6 @@ from src.domain.deal_case import (
     reference_deal,
     reference_fx,
 )
-from src.external.eximbank_fx import EximbankFxError, fetch_fx_reference
 from src.external.ksure_payment import KsurePaymentError, fetch_payment_context
 from src.finance.engine import (
     ReceivablePurchaseOption,
@@ -41,6 +41,7 @@ from src.reporting.deal_report import (
     DealReportInput,
     build_deal_report,
     current_ai_provenance,
+    official_context_text,
     report_basis_text,
 )
 
@@ -79,14 +80,6 @@ def krw_consumer(value: Decimal) -> str:
 
 def decimal_text(value: Decimal | None, suffix: str = "") -> str:
     return "n/a" if value is None else f"{value}{suffix}"
-
-
-def apply_loaded_fx() -> None:
-    snapshot = st.session_state.get("fx_reference_snapshot")
-    if snapshot is not None:
-        st.session_state["usd_krw_input"] = float(snapshot.usd_krw)
-        st.session_state["jpy_krw_input"] = float(snapshot.jpy_krw_per_100)
-        st.session_state["fx_apply_notice"] = "공식 기준환율을 현재 거래 입력에 반영했습니다."
 
 
 def apply_ai_proposal() -> None:
@@ -630,7 +623,7 @@ with st.expander("날짜별 현금흐름 상세 보기"):
     st.caption("결정론적 계산 엔진의 날짜별 자금 일정입니다.")
     st.dataframe(liquidity_rows, hide_index=True, width="stretch")
 
-st.subheader("90일 기다릴까, 먼저 현금화할까?")
+st.subheader("고객 입금일까지 기다릴까, 먼저 현금화할까?")
 st.badge("계산 결과", color="blue")
 purchase_result = None
 if deal.sale.payment_method is PaymentMethod.TT:
@@ -666,7 +659,7 @@ else:
         purchase = purchase_result.receivable_purchase
         comparison_columns = st.columns(2)
         with comparison_columns[0].container(border=True):
-            st.markdown("#### 90일 뒤 입금받기")
+            st.markdown(f"#### D+{base_result.collection_day}에 입금받기")
             st.metric(
                 "실제로 남는 마진",
                 percent(base_result.financing_adjusted_deal_margin),
@@ -702,51 +695,16 @@ else:
 
         st.info("판단 포인트: 빠른 유동성 확보와 명시적 매입·할인비용 간의 교환관계입니다.")
 
-st.subheader("공식 시장 정보")
+st.subheader("공식 시장 참고정보")
 st.write("공식 데이터는 명시적으로 불러오며, 현재 거래에는 사용자가 선택할 때만 반영됩니다.")
-market_columns = st.columns(2)
-
-with market_columns[0].container(border=True):
-    st.markdown("#### 공식 환율 참고")
-    st.badge("공식 데이터", color="green")
-    st.caption("출처: 한국수출입은행")
-    reference_date = st.date_input("기준일", value=date.today())
-    if st.button("공식 기준환율 불러오기"):
-        if not os.environ.get("EXIMBANK_AUTH_KEY"):
-            st.session_state["fx_load_message"] = (
-                "EXIMBANK_AUTH_KEY가 없어 공식 환율을 불러올 수 없습니다."
-            )
-        else:
-            try:
-                snapshot = fetch_fx_reference(reference_date)
-            except EximbankFxError:
-                st.session_state["fx_reference_snapshot"] = None
-                st.session_state["fx_load_message"] = (
-                    "공식 환율을 불러오지 못했습니다. 현재 분석 환율은 그대로 유지됩니다."
-                )
-            else:
-                st.session_state["fx_reference_snapshot"] = snapshot
-                st.session_state["fx_load_message"] = (
-                    "선택한 날짜의 공식 환율이 없습니다. 현재 분석 환율은 그대로 유지됩니다."
-                    if snapshot is None
-                    else "공식 기준환율을 불러왔습니다."
-                )
-    if message := st.session_state.get("fx_load_message"):
-        st.info(message)
-    if snapshot := st.session_state.get("fx_reference_snapshot"):
-        st.metric("USD/KRW", str(snapshot.usd_krw))
-        st.metric("JPY/KRW · 100 JPY", str(snapshot.jpy_krw_per_100))
-        st.caption(
-            f"기준일 {snapshot.reference_date.isoformat()} · deal_bas_r · 출처: 한국수출입은행"
-        )
-        st.button("현재 거래에 적용", on_click=apply_loaded_fx)
-    if notice := st.session_state.pop("fx_apply_notice", None):
-        st.success(notice)
-
-with market_columns[1].container(border=True):
+with st.container(border=True):
     st.markdown("#### 미국 기계업종의 실제 결제 참고정보")
     st.badge("공식 데이터", color="green")
     st.warning("국가·업종 집계 · 개별 바이어 예측 아님")
+    st.write(
+        "**결제완료 건 기준 집계 · 개별 바이어의 연체확률이나 "
+        "신용점수가 아닙니다.**"
+    )
     st.caption("미국 · 기타 기계 및 장비 제조업 · 출처: K-SURE")
     if st.button("K-SURE 결제정보 불러오기"):
         if not os.environ.get("KSURE_SERVICE_KEY"):
@@ -787,7 +745,6 @@ with market_columns[1].container(border=True):
             f"기준년도 {context.reference_year} · 최종갱신 "
             f"{context.last_update_date.isoformat()} · 출처: K-SURE"
         )
-        st.warning("지연결제율은 이 바이어의 지연확률이나 신용점수가 아닙니다.")
         if context.payment_terms or context.payment_period_distribution:
             with st.expander("결제조건·기간 분포 상세"):
                 if context.payment_terms:
@@ -832,7 +789,7 @@ with evidence_columns[2].container(border=True):
 evidence_columns = st.columns(2)
 with evidence_columns[0].container(border=True):
     st.markdown("**공식 데이터**")
-    st.write("K-SURE·한국수출입은행, 실제 불러온 경우만 표시")
+    st.write("K-SURE 결제 참고정보, 실제 불러온 경우만 표시")
 with evidence_columns[1].container(border=True):
     st.markdown("**Stress 가정**")
     st.write("미래 예측이 아닌 조건 변화 시뮬레이션")
@@ -847,9 +804,10 @@ report_basis = report_basis_text(
     ai_provenance_status,
     financialization is not None,
 )
-official_context_loaded = bool(
-    st.session_state.get("fx_reference_snapshot")
-    or st.session_state.get("ksure_payment_context")
+payment_context = st.session_state.get("ksure_payment_context")
+official_context = official_context_text(
+    fx_reference=None,
+    payment_context=payment_context,
 )
 report_preview = st.columns(3)
 report_preview[0].metric("현재 상태", "목표 충족" if meets_target else "목표 미달")
@@ -859,19 +817,18 @@ report_preview[1].metric(
 )
 report_preview[2].metric(
     "공식 데이터",
-    "포함" if official_context_loaded else "불러온 값 없음",
+    official_context,
 )
 report_bytes = build_deal_report(
     DealReportInput(
-        generated_at=datetime.now().astimezone(),
+        generated_at=datetime.now(ZoneInfo("Asia/Seoul")),
         deal=deal,
         base_result=base_result,
         scenario_results=tuple(scenario_results.items()),
         zero_profit_threshold=zero_profit_threshold,
         target_margin_threshold=target_threshold,
         purchase_result=purchase_result,
-        fx_reference=st.session_state.get("fx_reference_snapshot"),
-        payment_context=st.session_state.get("ksure_payment_context"),
+        payment_context=payment_context,
         ai_analysis_exists=financialization is not None,
         ai_provenance_status=ai_provenance_status,
         hedge_confirmed=bool(st.session_state.get("ai_hedge_confirmation")),

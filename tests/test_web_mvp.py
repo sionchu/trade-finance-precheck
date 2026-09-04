@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from streamlit.testing.v1 import AppTest
 
@@ -155,8 +156,8 @@ class WebMvpTests(unittest.TestCase):
             "거래서류로 자동 입력하기",
             "조건이 나빠지면 어떻게 될까요?",
             "돈은 언제 가장 많이 필요할까요?",
-            "90일 기다릴까, 먼저 현금화할까?",
-            "공식 시장 정보",
+            "고객 입금일까지 기다릴까, 먼저 현금화할까?",
+            "공식 시장 참고정보",
             "분석 근거",
             "결과를 공유해야 하나요?",
         ]
@@ -180,6 +181,40 @@ class WebMvpTests(unittest.TestCase):
         eximbank_fetch.assert_not_called()
         ksure_fetch.assert_not_called()
         openai_extract.assert_not_called()
+
+    def test_public_market_surface_is_ksure_only(self):
+        app, _, _, _ = self.render_without_credentials()
+        button_labels = [item.label for item in app.button]
+        self.assertIn("K-SURE 결제정보 불러오기", button_labels)
+        self.assertNotIn("공식 기준환율 불러오기", button_labels)
+        self.assertNotIn("현재 거래에 적용", button_labels)
+        self.assertEqual(len(app.date_input), 0)
+
+    def test_collection_day_updates_receivable_comparison_label(self):
+        app, _, _, _ = self.render_without_credentials({"결제일 (D+)": 120})
+        visible = "\n".join(item.value for item in app.markdown)
+        self.assertIn("D+120에 입금받기", visible)
+        self.assertNotIn("90일 뒤 입금받기", visible)
+
+    def test_report_generated_at_uses_seoul_timezone(self):
+        with (
+            patch.dict(
+                os.environ,
+                {"KSURE_SERVICE_KEY": "", "OPENAI_API_KEY": ""},
+                clear=False,
+            ),
+            patch(
+                "src.reporting.deal_report.build_deal_report",
+                return_value=b"%PDF-1.4",
+            ) as build_report,
+            patch("src.external.ksure_payment.fetch_payment_context"),
+            patch("src.ai.financialization.analyze_demo_documents"),
+        ):
+            app_path = Path(__file__).resolve().parents[1] / "app.py"
+            app = AppTest.from_file(app_path, default_timeout=10).run()
+        self.assertEqual(app.exception, [])
+        generated_at = build_report.call_args.args[0].generated_at
+        self.assertEqual(generated_at.tzinfo, ZoneInfo("Asia/Seoul"))
 
     def test_missing_credentials_do_not_prevent_deterministic_analysis(self):
         app, _, _, _ = self.render_without_credentials()

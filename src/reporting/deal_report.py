@@ -85,6 +85,19 @@ def report_basis_text(
     return "현재 Deal 입력 기반 분석"
 
 
+def official_context_text(
+    fx_reference: FxReferenceSnapshot | None,
+    payment_context: PaymentContext | None,
+) -> str:
+    if fx_reference is not None and payment_context is not None:
+        return "한국수출입은행 환율 / K-SURE 결제 Context"
+    if fx_reference is not None:
+        return "한국수출입은행 환율 Context"
+    if payment_context is not None:
+        return "K-SURE 결제 Context"
+    return "이 세션에 불러온 공식 데이터 없음"
+
+
 @dataclass(frozen=True)
 class DealReportInput:
     generated_at: datetime
@@ -235,7 +248,7 @@ def build_deal_report(report: DealReportInput) -> bytes:
         _p("AI Trade Finance Pre-check", styles["subtitle"]),
         _p("거래 금융 사전점검 보고서", styles["title"]),
         _p(
-            f"생성시각 {report.generated_at.astimezone().strftime('%Y-%m-%d %H:%M %Z')} / "
+            f"생성시각 {report.generated_at.strftime('%Y-%m-%d %H:%M %Z')} / "
             "분석용 사전점검 / 은행 승인 / 금융 실행 / 신용평가 아님",
             styles["small"],
         ),
@@ -362,9 +375,13 @@ def build_deal_report(report: DealReportInput) -> bytes:
     ai_provenance = (
         report_basis_text(report.ai_provenance_status, report.ai_analysis_exists)
     )
+    official_context = official_context_text(
+        report.fx_reference,
+        report.payment_context,
+    )
     provenance = [
         ["구분", "이 보고서의 근거"],
-        ["Observed official data", "불러온 Eximbank / K-SURE Context" if context_rows else "이 세션에 불러온 값 없음"],
+        ["Observed official data", official_context],
         ["AI extracted from document", ai_provenance],
         ["User confirmed", "환헤지 확인" if report.hedge_confirmed else "해당 없음"],
         ["Current Deal input", "Financial Engine에 사용된 현재 거래, 유동성, 목표, FX 입력"],

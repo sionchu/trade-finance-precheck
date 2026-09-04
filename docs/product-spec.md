@@ -12,20 +12,21 @@ Implementation State
 FROZEN / IMPLEMENTED:
 
 • Financial Engine v0.1
-• K-SURE aggregate payment context
-• Korea Eximbank official reference FX
 • Deterministic End-to-End Web MVP
 • Accepted KRDS/Toss-inspired presentation layer
 • AI Financialization
+• K-SURE public aggregate payment context
 • Deal Pre-check Report
+• Public Streamlit deployment
 
 VALIDATED / DEFERRED:
 
+• Korea Eximbank reference-FX adapter — local live validation passed; public Streamlit runtime disabled due target-environment reliability
 • Bank of Korea ECOS funding benchmark / macro context
 
 CURRENT GATE:
 
-• Public Deployment / Submission Hardening
+• Deal Rescue / Negotiation Solver
 
 DEFERRED:
 
@@ -33,7 +34,7 @@ DEFERRED:
 • Bank of Korea ECOS adapter
 • EUR/CNY engine expansion
 • Insurance, guarantees and hedge engine
-• Database, authentication and deployment
+• Database and authentication
 
 ────────
 
@@ -968,13 +969,15 @@ P0
 
 Korea Eximbank FX
 
-Implemented use:
+Validated / deployment-deferred technical asset:
 
 • `deal_bas_r` as the official neutral USD/KRW reference FX
 • `deal_bas_r` as the official neutral JPY/KRW-per-100 reference FX
 
 The Financial Engine retains one rate per currency. TTB/TTS are not implemented
 application behavior, and reference FX is not an achieved customer settlement rate.
+The adapter passed local live validation. Its public Streamlit runtime path is
+disabled because retrieval is unreliable in that target environment.
 
 K-SURE Export Payment Information
 
@@ -1212,8 +1215,8 @@ This gate is limited to:
 4. explicit user confirmation and a safe proposed Deal-input patch.
 
 AI explanation, arbitrary PDF upload, insurance, guarantees, hedge execution,
-databases, authentication, BOK integration, RAG, agents and deployment remain
-deferred. AI must never become the authoritative financial calculator.
+databases, authentication, BOK integration, RAG and agents remain deferred. AI
+must never become the authoritative financial calculator.
 
 ────────
 
@@ -1237,18 +1240,20 @@ forecast, or contract acceptance recommendation.
 Web MVP caller
     ├──→ Financial Engine v0.1
     ├──→ K-SURE payment context
-    ├──→ Korea Eximbank reference FX
     └──→ AI Financialization → reviewed proposed Deal-input patch
+
+Deployment-deferred technical asset
+    └──→ Korea Eximbank reference-FX adapter
 ```
 
-External APIs never run inside Financial Engine calculations. A caller converts
-the Eximbank reference snapshot into the engine's existing one-rate-per-currency
-input explicitly.
+External APIs never run inside Financial Engine calculations. The public Web
+MVP does not expose Korea Eximbank retrieval.
 
 ────────
 
 24. Deferred Product Gates
 
-AI explanation, BOK integration, EUR/CNY engine expansion, insurance, guarantee,
-FX-cover simulation, databases, authentication and deployment remain deferred.
-They require a later explicit specification change.
+The current gate is Deal Rescue / Negotiation Solver. AI explanation, BOK
+integration, EUR/CNY engine expansion, insurance, guarantee, FX-cover
+simulation, databases and authentication remain deferred. They require a later
+explicit specification change.

@@ -7,16 +7,16 @@ The canonical product definition is [docs/product-spec.md](docs/product-spec.md)
 ## Current state
 
 The repository contains the frozen deterministic Financial Engine v0.1,
-the K-SURE aggregate payment-context integration, and the Korea Eximbank
-official reference-FX integration, exposed through a deterministic Streamlit
-Web MVP. The MVP also includes optional AI financialization of the bundled
-synthetic trade-document demo.
+Streamlit Web MVP and presentation layer, optional AI financialization of the
+bundled synthetic trade-document demo, public K-SURE aggregate payment context,
+and the Deal Pre-check Report. The public Streamlit deployment is operational.
 
-The current deterministic analysis can also be downloaded as a Deal Pre-check
-Report. Report generation does not require AI or official-data credentials.
+The Korea Eximbank reference-FX adapter passed local live validation but is
+deployment-deferred; its public Streamlit runtime path is disabled because it
+is unreliable in that target environment. The Bank of Korea ECOS funding
+benchmark and macro context are also validated and deferred.
 
-The Bank of Korea ECOS funding benchmark and macro context are validated but
-deferred; no ECOS adapter is implemented.
+The current product gate is Deal Rescue / Negotiation Solver.
 
 ## Scope
 
@@ -32,10 +32,9 @@ python -m pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Optional official-data retrieval uses `EXIMBANK_AUTH_KEY` and
-`KSURE_SERVICE_KEY`. Optional AI document financialization uses
-`OPENAI_API_KEY`. The deterministic analysis runs without any of these
-variables.
+Optional public K-SURE retrieval uses `KSURE_SERVICE_KEY`. Optional AI document
+financialization uses `OPENAI_API_KEY`. The deterministic analysis runs without
+either variable.
 
 ## Tests
 

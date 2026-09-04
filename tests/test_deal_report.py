@@ -19,6 +19,7 @@ from src.reporting.deal_report import (
     DealReportInput,
     build_deal_report,
     current_ai_provenance,
+    official_context_text,
     report_basis_text,
 )
 
@@ -87,6 +88,40 @@ class DealReportTests(unittest.TestCase):
                 )
             )
         )
+
+    def test_official_context_provenance_is_source_aware(self):
+        fx_reference = FxReferenceSnapshot(
+            reference_date=date(2026, 9, 3),
+            usd_krw=Decimal("1400.00"),
+            jpy_krw_per_100=Decimal("900.00"),
+        )
+        payment_context = PaymentContext(
+            country_code="450",
+            industry_major_code="29",
+            last_update_date=date(2026, 1, 31),
+            reference_year=2025,
+            average_payment_period_days=Decimal("47.2"),
+            late_payment_rate_percent=Decimal("18.4"),
+            average_late_payment_period_days=Decimal("13.7"),
+            payment_terms=(),
+            payment_period_distribution=(),
+        )
+        cases = (
+            (None, payment_context, "K-SURE 결제 Context"),
+            (fx_reference, None, "한국수출입은행 환율 Context"),
+            (
+                fx_reference,
+                payment_context,
+                "한국수출입은행 환율 / K-SURE 결제 Context",
+            ),
+            (None, None, "이 세션에 불러온 공식 데이터 없음"),
+        )
+        for fx_value, payment_value, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(
+                    official_context_text(fx_value, payment_value),
+                    expected,
+                )
 
     def test_report_does_not_invoke_openai_or_external_apis(self):
         with (
