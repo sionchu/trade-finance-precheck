@@ -48,6 +48,12 @@ from src.finance.engine import (
     evaluate_deal,
     solve_usd_krw_threshold,
 )
+from src.finance.liquidity import (
+    FundingChoice,
+    FundingChoiceStatus,
+    WorkingCapitalCreditLine,
+    analyze_company_funding,
+)
 from src.finance.rescue import (
     RescueLever,
     RescueStatus,
@@ -993,18 +999,22 @@ if review_run is not None:
                     f"합계 {review_run.usage.total_tokens:,}"
                 )
 
-st.subheader("돈은 언제 가장 많이 필요할까요?")
-st.badge("계산 결과", color="blue")
-st.markdown(f"**돈이 가장 많이 필요한 시점은 D+{peak_point.day}입니다.**")
-liquidity_metrics = st.columns(2)
+st.subheader("회사 자금으로 대금 회수일까지 버틸 수 있을까요?")
+st.badge("자금 수용력 · 승인 예측 아님", color="blue")
+liquidity_metrics = st.columns(3)
 liquidity_metrics[0].metric(
-    "거래에 가장 많이 필요한 돈",
+    "거래 최대 자금소요",
     krw_consumer(base_result.funding.peak_deal_funding_krw),
 )
 liquidity_metrics[1].metric(
-    "최대로 빌려야 하는 돈",
+    "이번 거래 투입 회사자금",
+    krw_consumer(deal.available_cash_krw),
+)
+liquidity_metrics[2].metric(
+    "추가 필요자금",
     krw_consumer(base_result.funding.maximum_external_borrowing_krw),
 )
+st.caption(f"자금 부담이 가장 큰 시점 D+{peak_point.day} · 거래별 배정 자금 기준")
 liquidity_rows = [
     {
         "시점": f"D+{point.day}",
@@ -1017,8 +1027,73 @@ with st.expander("날짜별 현금흐름 상세 보기"):
     st.caption("결정론적 계산 엔진의 날짜별 자금 일정입니다.")
     st.dataframe(liquidity_rows, hide_index=True, width="stretch")
 
-st.subheader("고객 입금일까지 기다릴까, 먼저 현금화할까?")
-st.badge("계산 결과", color="blue")
+st.markdown("### 기존 운전자금 한도")
+credit_inputs = st.columns(3)
+credit_total = credit_inputs[0].number_input(
+    "운전자금 한도 총액",
+    min_value=0.0,
+    value=100000000.0,
+    step=1000000.0,
+    key="credit_total_limit_input",
+)
+credit_used = credit_inputs[1].number_input(
+    "현재 사용액",
+    min_value=0.0,
+    value=30000000.0,
+    step=1000000.0,
+    key="credit_used_amount_input",
+)
+credit_fee = credit_inputs[2].number_input(
+    "이 거래에 추가로 발생하는 한도 수수료",
+    min_value=0.0,
+    value=0.0,
+    step=100000.0,
+    key="credit_deal_fee_input",
+)
+credit_line = None
+try:
+    credit_line = WorkingCapitalCreditLine(
+        total_limit_krw=decimal_from_widget(credit_total),
+        used_amount_krw=decimal_from_widget(credit_used),
+        deal_specific_fee_krw=decimal_from_widget(credit_fee),
+    )
+except ValueError:
+    st.error("현재 사용액은 운전자금 한도 총액을 초과할 수 없습니다.")
+else:
+    st.metric("미사용 한도", krw_consumer(credit_line.unused_limit_krw))
+st.caption("데모 입력 · 실제 은행 승인 또는 신용평가 결과 아님")
+st.write("사용자가 입력한 기존 한도 기준이며 은행 승인 가능성을 예측하지 않습니다.")
+
+if credit_line is not None:
+    capacity_analysis = analyze_company_funding(
+        deal=deal,
+        base_result=base_result,
+        combined_result=combined_result,
+        credit_line=credit_line,
+        purchase_result=None,
+    )
+    capacity_columns = st.columns(2)
+    for column, title, capacity, stressed in (
+        (capacity_columns[0], "현재 조건", capacity_analysis.base_capacity, False),
+        (capacity_columns[1], "복합 악화 시", capacity_analysis.combined_capacity, True),
+    ):
+        with column.container(border=True):
+            st.markdown(f"#### {title}")
+            if stressed:
+                st.badge("Stress 가정 · 승인 예측 아님", color="orange")
+            st.write(f"**필요 은행자금**  {krw_consumer(capacity.required_external_funding_krw)}")
+            st.write(f"**미사용 한도**  {krw_consumer(capacity.unused_credit_limit_krw)}")
+            if capacity.feasible:
+                st.success(
+                    f"현재 입력 기준 한도 내 · 한도 여유 {krw_consumer(capacity.credit_headroom_krw)}"
+                )
+            else:
+                st.error(
+                    f"현재 입력 한도 초과 · 한도 부족 {krw_consumer(capacity.liquidity_gap_krw)}"
+                )
+
+st.subheader("부족한 돈은 어떻게 메울까요?")
+st.badge("조건 비교 · 금융 실행 아님", color="blue")
 purchase_result = None
 if deal.sale.payment_method is PaymentMethod.TT:
     st.info("EARLY_RECEIVABLE_PURCHASE는 v0.1에서 O/A 매출채권에만 적용됩니다.")
@@ -1026,19 +1101,22 @@ else:
     default_purchase = canonical_purchase_option()
     purchase_columns = st.columns(3)
     purchase_day = purchase_columns[0].number_input(
-        "매입일 (D+)", min_value=0, value=default_purchase.purchase_day, step=1
+        "매입일 (D+)", min_value=0, value=default_purchase.purchase_day, step=1,
+        key="receivable_purchase_day_input",
     )
     discount_rate_percent = purchase_columns[1].number_input(
         "연 할인율 (%)",
         min_value=0.0,
         value=float(default_purchase.annual_discount_rate * Decimal("100")),
         step=0.1,
+        key="receivable_discount_rate_input",
     )
     fee_rate_percent = purchase_columns[2].number_input(
         "수수료율 (%)",
         min_value=0.0,
         value=float(default_purchase.fee_rate * Decimal("100")),
         step=0.05,
+        key="receivable_fee_rate_input",
     )
     purchase_option = ReceivablePurchaseOption(
         purchase_day=int(purchase_day),
@@ -1049,45 +1127,73 @@ else:
         purchase_result = evaluate_deal(deal, fx, purchase_option=purchase_option)
     except ValueError as exc:
         st.warning(f"입력값을 확인해 주세요: {exc}")
+
+if credit_line is not None:
+    funding_analysis = analyze_company_funding(
+        deal=deal,
+        base_result=base_result,
+        combined_result=combined_result,
+        credit_line=credit_line,
+        purchase_result=purchase_result,
+    )
+    choices = {item.choice: item for item in funding_analysis.choices}
+    choice_columns = st.columns(3)
+    choice_specs = (
+        (FundingChoice.INTERNAL_CASH_ONLY, "회사자금만으로 기다리기"),
+        (
+            FundingChoice.WAIT_WITH_CREDIT_LINE,
+            f"D+{base_result.collection_day}에 입금받기 · 기존 운전자금 한도",
+        ),
+        (FundingChoice.EARLY_RECEIVABLE_PURCHASE, "매출채권 먼저 현금화하기"),
+    )
+    for column, (choice_name, title) in zip(choice_columns, choice_specs):
+        choice = choices[choice_name]
+        with column.container(border=True):
+            st.markdown(f"#### {title}")
+            if choice.status is FundingChoiceStatus.FEASIBLE:
+                st.success("가능")
+            elif choice.status is FundingChoiceStatus.INFEASIBLE:
+                st.error("불가")
+            else:
+                st.info("현재 결제방식에는 적용 안 됨")
+            if choice.status is not FundingChoiceStatus.NOT_APPLICABLE:
+                st.write(f"**최대 은행 필요액**  {krw_consumer(choice.required_external_funding_krw)}")
+                if choice.liquidity_gap_krw > 0:
+                    st.write(f"**부족**  {krw_consumer(choice.liquidity_gap_krw)}")
+                elif choice_name is not FundingChoice.INTERNAL_CASH_ONLY:
+                    st.write(f"**한도 여유**  {krw_consumer(choice.credit_headroom_krw)}")
+                cost = (
+                    "산정하지 않음"
+                    if choice.total_financing_cost_krw is None
+                    else krw_consumer(choice.total_financing_cost_krw)
+                )
+                st.write(f"**금융비용**  {cost}")
+                st.write(f"**현금 유입일**  D+{choice.cash_inflow_day}")
+                if choice_name is FundingChoice.EARLY_RECEIVABLE_PURCHASE and purchase_result is not None:
+                    purchase = purchase_result.receivable_purchase
+                    st.write(f"**할인비용**  {krw_consumer(purchase.discount_cost_krw)}")
+                    st.write(f"**매입수수료**  {krw_consumer(purchase.purchase_fee_krw)}")
+
+    early = choices[FundingChoice.EARLY_RECEIVABLE_PURCHASE]
+    wait = choices[FundingChoice.WAIT_WITH_CREDIT_LINE]
+    if (
+        purchase_result is not None
+        and purchase_result.receivable_purchase is not None
+        and purchase_result.receivable_purchase.purchase_day > peak_point.day
+        and early.required_external_funding_krw == wait.required_external_funding_krw
+    ):
+        st.info(
+            f"이 거래에서는 최대 자금부족이 D+{peak_point.day}에 발생하고 "
+            f"매출채권 현금화는 D+{purchase_result.receivable_purchase.purchase_day}이므로, "
+            "조기현금화가 최대 필요 한도를 줄이지는 않습니다. "
+            "대신 현금 유입을 앞당겨 차입기간을 줄입니다."
+        )
     else:
-        purchase = purchase_result.receivable_purchase
-        comparison_columns = st.columns(2)
-        with comparison_columns[0].container(border=True):
-            st.markdown(f"#### D+{base_result.collection_day}에 입금받기")
-            st.metric(
-                "실제로 남는 마진",
-                percent(base_result.financing_adjusted_deal_margin),
-            )
-            st.write(
-                f"**최대로 빌려야 하는 돈**  "
-                f"{krw_consumer(base_result.funding.maximum_external_borrowing_krw)}"
-            )
-            st.write(
-                f"**돈을 받기 전까지 드는 이자**  "
-                f"{krw_consumer(base_result.funding.external_funding_cost_krw)}"
-            )
-            st.write("**조기 현금화 비용**  해당 없음")
-            st.write(f"**현금 유입일**  D+{base_result.collection_day}")
-
-        with comparison_columns[1].container(border=True):
-            st.markdown("#### D+65에 먼저 현금화하기")
-            st.metric(
-                "실제로 남는 마진",
-                percent(purchase_result.financing_adjusted_deal_margin),
-            )
-            st.write(
-                f"**최대로 빌려야 하는 돈**  "
-                f"{krw_consumer(purchase_result.funding.maximum_external_borrowing_krw)}"
-            )
-            st.write(
-                f"**돈을 받기 전까지 드는 이자**  "
-                f"{krw_consumer(purchase_result.funding.external_funding_cost_krw)}"
-            )
-            st.write(f"**할인비용**  {krw_consumer(purchase.discount_cost_krw)}")
-            st.write(f"**수수료**  {krw_consumer(purchase.purchase_fee_krw)}")
-            st.write(f"**현금화일**  D+{purchase.purchase_day}")
-
-        st.info("판단 포인트: 빠른 유동성 확보와 명시적 매입·할인비용 간의 교환관계입니다.")
+        st.info("현금 유입 시점, 최대 은행 필요액과 금융비용을 함께 비교합니다.")
+    st.caption(
+        "T2의 추가 한도 수수료는 자금조달 비교 비용에 포함되며 "
+        "기존 Deal Margin 엔진에는 자동 반영하지 않습니다."
+    )
 
 st.subheader("공식 시장 참고정보")
 st.write(

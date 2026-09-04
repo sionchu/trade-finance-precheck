@@ -8,16 +8,17 @@
 
 ## Current gate
 
-- The deterministic Financial Engine v0.1, Deal Rescue / Negotiation Solver, End-to-End Web MVP, accepted presentation layer, Trade Document Financialization, Financial Statement Financialization / Company Liquidity Profile, bounded Single Deal Review Agent, K-SURE public payment-context integration, Deal Pre-check Report, and public Streamlit deployment are implemented and frozen.
+- The deterministic Financial Engine v0.1, Deal Rescue / Negotiation Solver, Company Liquidity & Funding Choice, End-to-End Web MVP, accepted presentation layer, Trade Document Financialization, Financial Statement Financialization / Company Liquidity Profile, bounded Single Deal Review Agent, K-SURE public payment-context integration, Deal Pre-check Report, and public Streamlit deployment are implemented and frozen.
 - The Korea Eximbank reference-FX adapter is locally validated and deployment-deferred. Its public Streamlit runtime path is disabled because it is unreliable in that target environment.
 - Bank of Korea ECOS is validated and deferred; no ECOS adapter is implemented.
 - Do not modify frozen behavior unless a new, evidenced P0 correctness issue is established.
 - New application layers must consume frozen components through explicit boundaries. External API access must never move inside Financial Engine calculations.
 - The product is a Company-aware Trade Treasury Pre-check with three connected decision layers: frozen Deal Economics, authorized Company Liquidity, and authorized FX Treasury.
 - AI has exactly three product roles: Trade Document Financialization, Financial Statement Financialization, and the Single Deal Review Agent.
-- The current authorized gate is T2 — Company Liquidity & Funding Choice. Do not implement T3 or later gates from this gate.
+- The current authorized gate is T3 — FX Treasury / Forward Hedge Simulation. Do not implement T4 or later gates from this gate.
 - The canonical gate sequence is T1 Company Liquidity Profile, T2 Company Liquidity & Funding Choice, T3 FX Treasury / Forward Hedge Simulation, T4 Banker's Usance, T5 Treasury integration into the Single Deal Review Agent, and T6 Presentation IA RE0 / Report / Submission Final Freeze.
 - Financial Statement AI extracts only explicitly supported liquidity facts and is frozen. It must not infer credit approval, bank lending capacity, company available cash, a credit score, default, or future cash flow. Deal-specific available company cash always requires explicit user confirmation.
+- Working-capital total limit and used amount are user-entered facts; unused limit is derived. `DealCase.annual_funding_rate` remains the borrowing-rate SSOT, and financial-statement cash never sets Deal-specific available cash.
 - Payment method and financing structure are separate concepts. Core Deal payment methods remain OA / TT; do not create a generic `PAYMENT_USANCE` enum. Banker's Usance is a later narrow funding simulation for a foreign payable.
 - The Single Deal Review Agent is a one-shot, bounded read-only explanation layer. It must not perform authoritative financial calculations, mutate the Deal, execute finance, fetch external data, or retain conversation history. A later T5 gate may integrate already-computed Treasury context without changing these rules.
 - Do not advance outside the canonical gate sequence or add full L/C / UPAS / D/A / D/P workflows, FX forecasting, stochastic risk models, insurance or guarantee execution, actual hedge or loan execution, bank approval or buyer-default prediction, databases, authentication, multi-agent systems, RAG, arbitrary web search, EUR/CNY support, microservices, or speculative provider abstractions.

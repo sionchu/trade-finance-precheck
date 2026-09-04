@@ -198,8 +198,8 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(app.metric[0].value, "14.64%")
         self.assertEqual(labels["현재 분석 환율"], "1,400원")
         self.assertEqual(labels["목표마진 유지선"], "1,386.47원")
-        self.assertEqual(labels["거래에 가장 많이 필요한 돈"], "1억 1,900만원")
-        self.assertEqual(labels["최대로 빌려야 하는 돈"], "6,900만원")
+        self.assertEqual(labels["거래 최대 자금소요"], "1억 1,900만원")
+        self.assertEqual(labels["추가 필요자금"], "6,900만원")
 
     def test_canonical_usd_stress_is_below_fourteen_percent_target(self):
         app, _, _, _ = self.render_without_credentials()
@@ -231,8 +231,8 @@ class WebMvpTests(unittest.TestCase):
             "조건이 나빠지면 어떻게 될까요?",
             "이 거래를 목표 수준으로 만들려면?",
             "AI 거래 검토 에이전트",
-            "돈은 언제 가장 많이 필요할까요?",
-            "고객 입금일까지 기다릴까, 먼저 현금화할까?",
+            "회사 자금으로 대금 회수일까지 버틸 수 있을까요?",
+            "부족한 돈은 어떻게 메울까요?",
             "공식 시장 참고정보",
             "분석 근거",
             "결과를 공유해야 하나요?",
@@ -292,6 +292,38 @@ class WebMvpTests(unittest.TestCase):
         visible = "\n".join(item.value for item in (*app.markdown, *app.caption))
         self.assertIn("가상 재무제표 · 실제 기업 자료 아님", visible)
         self.last_statement_extract.assert_not_called()
+
+    def test_company_funding_capacity_and_choices_are_visible(self):
+        app, _, _, _ = self.render_without_credentials()
+        headings = [item.value for item in app.subheader]
+        self.assertIn("회사 자금으로 대금 회수일까지 버틸 수 있을까요?", headings)
+        self.assertIn("부족한 돈은 어떻게 메울까요?", headings)
+        labels = {item.label: item.value for item in app.metric}
+        self.assertEqual(labels["미사용 한도"], "7,000만원")
+        number_labels = [item.label for item in app.number_input]
+        self.assertIn("운전자금 한도 총액", number_labels)
+        self.assertIn("현재 사용액", number_labels)
+        self.assertEqual(number_labels.count("실제 연 조달금리 (%)"), 1)
+        visible = "\n".join(
+            item.value
+            for item in (*app.markdown, *app.success, *app.error, *app.info, *app.caption)
+        )
+        self.assertIn("현재 입력 기준 한도 내 · 한도 여유 100만원", visible)
+        self.assertIn("현재 입력 한도 초과 · 한도 부족 30만원", visible)
+        self.assertIn("회사자금만으로 기다리기", visible)
+        self.assertIn("D+90에 입금받기 · 기존 운전자금 한도", visible)
+        self.assertIn("매출채권 먼저 현금화하기", visible)
+        self.assertIn("**최대 은행 필요액**  6,900만원", visible)
+        self.assertIn("최대 자금부족이 D+60", visible)
+        self.assertIn("매출채권 현금화는 D+65", visible)
+        self.assertIn("기존 Deal Margin 엔진에는 자동 반영하지 않습니다", visible)
+
+    def test_sixty_million_unused_line_blocks_wait_and_purchase(self):
+        app, _, _, _ = self.render_without_credentials(
+            {"운전자금 한도 총액": 90000000.0, "현재 사용액": 30000000.0}
+        )
+        visible = "\n".join(item.value for item in (*app.markdown, *app.error))
+        self.assertGreaterEqual(visible.count("**부족**  900만원"), 2)
 
     def test_explicit_statement_cta_renders_normalized_profile_without_changing_deal_cash(self):
         with (

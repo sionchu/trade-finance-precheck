@@ -17,6 +17,7 @@ FROZEN / IMPLEMENTED:
 • Accepted KRDS/Toss-inspired presentation layer
 • Trade Document Financialization
 • Financial Statement Financialization / Company Liquidity Profile
+• Company Liquidity & Funding Choice
 • Single Deal Review Agent
 • K-SURE public aggregate payment context
 • Deal Pre-check Report
@@ -29,7 +30,7 @@ VALIDATED / DEFERRED:
 
 CURRENT GATE:
 
-• T2 — Company Liquidity & Funding Choice
+• T3 — FX Treasury / Forward Hedge Simulation
 
 DEFERRED:
 
@@ -1368,26 +1369,35 @@ API key, company-code search or XBRL parser is implemented in T1.
 
 ────────
 
-25. Company Liquidity and Funding Choice — T2 / T4
+25. Frozen Gate — Company Liquidity & Funding Choice
 
-The deterministic funding comparison may evaluate:
+The implemented deterministic T2 comparison evaluates:
 
 1. internal company cash;
 2. an existing working-capital credit line;
-3. receivable early purchase;
-4. Banker's Usance for a supported foreign payable.
+3. receivable early purchase.
 
 Bank credit uses only user-supplied existing facts:
 
 • total credit limit
 • used amount
-• unused amount
-• borrowing rate
 • optional explicit fee
+
+Unused limit is derived as total limit minus used amount; it is not a third
+editable source of truth. `DealCase.annual_funding_rate` is the borrowing-rate
+SSOT. Financial-statement cash remains context and never sets the user-confirmed
+Deal-specific available cash.
 
 The comparison derives funding capacity and any liquidity gap. It does not
 predict bank approval, recommend a bank, execute borrowing, or score
 creditworthiness.
+
+The T2 choices consume existing authoritative Financial Engine results. The
+credit-line explicit fee is included in the funding-choice cost comparison only
+when external credit is required; it is not injected into the frozen Deal Margin
+engine because that engine has no timed semantic for this fee.
+
+Banker's Usance remains the separate T4 gate for a supported foreign payable.
 
 Payment method and financing structure remain separate. Core Deal payment
 methods are OA and TT. L/C recognition remains extraction-only and unsupported
@@ -1450,7 +1460,7 @@ universally better.
 5. T5 — Treasury integration into Single Deal Review Agent
 6. T6 — Presentation IA RE0 / Report / Submission Final Freeze
 
-The current authorized gate is T2. Later gates are defined boundaries, not
+The current authorized gate is T3. Later gates are defined boundaries, not
 authorization to implement them early.
 
 ────────
