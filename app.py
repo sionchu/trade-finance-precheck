@@ -1908,6 +1908,7 @@ if experience_data is not None:
     ]
     experience_data["reviewState"] = {
         "ready": treasury_review_ready,
+        "hasResult": stored_review_run is not None,
         "current": stored_review_current,
         "headline": stored_review_run.memo.headline if stored_review_current else None,
         "summary": stored_review_run.memo.summary if stored_review_current else None,

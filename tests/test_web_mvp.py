@@ -633,6 +633,7 @@ class WebMvpTests(unittest.TestCase):
             item.value
             for item in (*app.markdown, *app.info, *app.warning)
         )
+        self.assertNotIn("조건이 변경되어 다시 검토가 필요합니다", visible)
         self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
         self.assertIn("먼저 확인할 Treasury 이슈", visible)
         self.assertIn("함께 본 근거", visible)

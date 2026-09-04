@@ -25,7 +25,7 @@ var fp;
 function Z1() {
   return fp || (fp = 1, qr.exports = X1()), qr.exports;
 }
-var Z = Z1(), Yr = { exports: {} }, lt = {};
+var X = Z1(), Yr = { exports: {} }, lt = {};
 var hp;
 function Q1() {
   if (hp) return lt;
@@ -191,7 +191,7 @@ function Q1() {
     }
     return At;
   }
-  function X(E, N, Q) {
+  function Z(E, N, Q) {
     if (E == null) return E;
     var P = [], st = 0;
     return V(E, P, "", "", function(ct) {
@@ -228,9 +228,9 @@ function Q1() {
     }
     console.error(E);
   }, yt = {
-    map: X,
+    map: Z,
     forEach: function(E, N, Q) {
-      X(
+      Z(
         E,
         function() {
           N.apply(this, arguments);
@@ -240,12 +240,12 @@ function Q1() {
     },
     count: function(E) {
       var N = 0;
-      return X(E, function() {
+      return Z(E, function() {
         N++;
       }), N;
     },
     toArray: function(E) {
-      return X(E, function(N) {
+      return Z(E, function(N) {
         return N;
       }) || [];
     },
@@ -393,13 +393,13 @@ var Y = Uc(), Gr = { exports: {} }, ul = {}, Xr = { exports: {} }, Zr = {};
 var mp;
 function K1() {
   return mp || (mp = 1, (function(i) {
-    function l(V, X) {
+    function l(V, Z) {
       var k = V.length;
-      V.push(X);
+      V.push(Z);
       t: for (; 0 < k; ) {
         var ot = k - 1 >>> 1, yt = V[ot];
-        if (0 < c(yt, X))
-          V[ot] = X, V[k] = yt, k = ot;
+        if (0 < c(yt, Z))
+          V[ot] = Z, V[k] = yt, k = ot;
         else break t;
       }
     }
@@ -408,8 +408,8 @@ function K1() {
     }
     function o(V) {
       if (V.length === 0) return null;
-      var X = V[0], k = V.pop();
-      if (k !== X) {
+      var Z = V[0], k = V.pop();
+      if (k !== Z) {
         V[0] = k;
         t: for (var ot = 0, yt = V.length, E = yt >>> 1; ot < E; ) {
           var N = 2 * (ot + 1) - 1, Q = V[N], P = N + 1, st = V[P];
@@ -420,11 +420,11 @@ function K1() {
           else break t;
         }
       }
-      return X;
+      return Z;
     }
-    function c(V, X) {
-      var k = V.sortIndex - X.sortIndex;
-      return k !== 0 ? k : V.id - X.id;
+    function c(V, Z) {
+      var k = V.sortIndex - Z.sortIndex;
+      return k !== 0 ? k : V.id - Z.id;
     }
     if (i.unstable_now = void 0, typeof performance == "object" && typeof performance.now == "function") {
       var d = performance;
@@ -439,12 +439,12 @@ function K1() {
     }
     var g = [], m = [], v = 1, S = null, b = 3, M = !1, R = !1, B = !1, w = !1, L = typeof setTimeout == "function" ? setTimeout : null, G = typeof clearTimeout == "function" ? clearTimeout : null, H = typeof setImmediate < "u" ? setImmediate : null;
     function q(V) {
-      for (var X = u(m); X !== null; ) {
-        if (X.callback === null) o(m);
-        else if (X.startTime <= V)
-          o(m), X.sortIndex = X.expirationTime, l(g, X);
+      for (var Z = u(m); Z !== null; ) {
+        if (Z.callback === null) o(m);
+        else if (Z.startTime <= V)
+          o(m), Z.sortIndex = Z.expirationTime, l(g, Z);
         else break;
-        X = u(m);
+        Z = u(m);
       }
     }
     function et(V) {
@@ -452,8 +452,8 @@ function K1() {
         if (u(g) !== null)
           R = !0, it || (it = !0, vt());
         else {
-          var X = u(m);
-          X !== null && wt(et, X.startTime - V);
+          var Z = u(m);
+          Z !== null && wt(et, Z.startTime - V);
         }
     }
     var it = !1, K = -1, J = 5, at = -1;
@@ -464,7 +464,7 @@ function K1() {
       if (w = !1, it) {
         var V = i.unstable_now();
         at = V;
-        var X = !0;
+        var Z = !0;
         try {
           t: {
             R = !1, B && (B = !1, G(K), K = -1), M = !0;
@@ -479,30 +479,30 @@ function K1() {
                       S.expirationTime <= V
                     );
                     if (V = i.unstable_now(), typeof yt == "function") {
-                      S.callback = yt, q(V), X = !0;
+                      S.callback = yt, q(V), Z = !0;
                       break e;
                     }
                     S === u(g) && o(g), q(V);
                   } else o(g);
                   S = u(g);
                 }
-                if (S !== null) X = !0;
+                if (S !== null) Z = !0;
                 else {
                   var E = u(m);
                   E !== null && wt(
                     et,
                     E.startTime - V
-                  ), X = !1;
+                  ), Z = !1;
                 }
               }
               break t;
             } finally {
               S = null, b = k, M = !1;
             }
-            X = void 0;
+            Z = void 0;
           }
         } finally {
-          X ? vt() : it = !1;
+          Z ? vt() : it = !1;
         }
       }
     }
@@ -520,10 +520,10 @@ function K1() {
       vt = function() {
         L(pt, 0);
       };
-    function wt(V, X) {
+    function wt(V, Z) {
       K = L(function() {
         V(i.unstable_now());
-      }, X);
+      }, Z);
     }
     i.unstable_IdlePriority = 5, i.unstable_ImmediatePriority = 1, i.unstable_LowPriority = 4, i.unstable_NormalPriority = 3, i.unstable_Profiling = null, i.unstable_UserBlockingPriority = 2, i.unstable_cancelCallback = function(V) {
       V.callback = null;
@@ -538,13 +538,13 @@ function K1() {
         case 1:
         case 2:
         case 3:
-          var X = 3;
+          var Z = 3;
           break;
         default:
-          X = b;
+          Z = b;
       }
       var k = b;
-      b = X;
+      b = Z;
       try {
         return V();
       } finally {
@@ -552,7 +552,7 @@ function K1() {
       }
     }, i.unstable_requestPaint = function() {
       w = !0;
-    }, i.unstable_runWithPriority = function(V, X) {
+    }, i.unstable_runWithPriority = function(V, Z) {
       switch (V) {
         case 1:
         case 2:
@@ -566,11 +566,11 @@ function K1() {
       var k = b;
       b = V;
       try {
-        return X();
+        return Z();
       } finally {
         b = k;
       }
-    }, i.unstable_scheduleCallback = function(V, X, k) {
+    }, i.unstable_scheduleCallback = function(V, Z, k) {
       var ot = i.unstable_now();
       switch (typeof k == "object" && k !== null ? (k = k.delay, k = typeof k == "number" && 0 < k ? ot + k : ot) : k = ot, V) {
         case 1:
@@ -590,17 +590,17 @@ function K1() {
       }
       return yt = k + yt, V = {
         id: v++,
-        callback: X,
+        callback: Z,
         priorityLevel: V,
         startTime: k,
         expirationTime: yt,
         sortIndex: -1
       }, k > ot ? (V.sortIndex = k, l(m, V), u(g) === null && V === u(m) && (B ? (G(K), K = -1) : B = !0, wt(et, k - ot))) : (V.sortIndex = yt, l(g, V), R || M || (R = !0, it || (it = !0, vt()))), V;
     }, i.unstable_shouldYield = I, i.unstable_wrapCallback = function(V) {
-      var X = b;
+      var Z = b;
       return function() {
         var k = b;
-        b = X;
+        b = Z;
         try {
           return V.apply(this, arguments);
         } finally {
@@ -921,7 +921,7 @@ function W1() {
       }
     return null;
   }
-  var wt = Array.isArray, V = l.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, X = u.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, k = {
+  var wt = Array.isArray, V = l.__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, Z = u.__DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE, k = {
     pending: !1,
     data: null,
     method: null,
@@ -1320,15 +1320,15 @@ Error generating stack: ` + a.message + `
     return t &= -t, 2 < t ? 8 < t ? (t & 134217727) !== 0 ? 32 : 268435456 : 8 : 2;
   }
   function vf() {
-    var t = X.p;
+    var t = Z.p;
     return t !== 0 ? t : (t = window.event, t === void 0 ? 32 : ip(t.type));
   }
   function Sf(t, e) {
-    var n = X.p;
+    var n = Z.p;
     try {
-      return X.p = t, e();
+      return Z.p = t, e();
     } finally {
-      X.p = n;
+      Z.p = n;
     }
   }
   var bn = Math.random().toString(36).slice(2), $t = "__reactFiber$" + bn, ce = "__reactProps$" + bn, Ti = "__reactContainer$" + bn, Ou = "__reactEvents$" + bn, _0 = "__reactListeners$" + bn, U0 = "__reactHandles$" + bn, Tf = "__reactResources$" + bn, ga = "__reactMarker$" + bn;
@@ -3961,8 +3961,8 @@ Error generating stack: ` + a.message + `
     return Te(n, e) ? n : Gi.current !== null ? (t = jo(t, n, a), Te(t, e) || (Zt = !0), t) : (on & 42) === 0 || (on & 1073741824) !== 0 && (dt & 261930) === 0 ? (Zt = !0, t.memoizedState = n) : (t = im(), ut.lanes |= t, Bn |= t, e);
   }
   function ad(t, e, n, a, s) {
-    var r = X.p;
-    X.p = r !== 0 && 8 > r ? r : 8;
+    var r = Z.p;
+    Z.p = r !== 0 && 8 > r ? r : 8;
     var f = V.T, y = {};
     V.T = y, Lo(t, !1, e, n);
     try {
@@ -3994,7 +3994,7 @@ Error generating stack: ` + a.message + `
         De()
       );
     } finally {
-      X.p = r, f !== null && y.types !== null && (f.types = y.types), V.T = f;
+      Z.p = r, f !== null && y.types !== null && (f.types = y.types), V.T = f;
     }
   }
   function wv() {
@@ -7676,11 +7676,11 @@ Error generating stack: ` + a.message + `
       ), t === zt && (ft = zt = null, dt = 0), Wi = e, Nn = t, gn = n, or = r, rr = s, nm = a, (e.subtreeFlags & 10256) !== 0 || (e.flags & 10256) !== 0 ? (t.callbackNode = null, t.callbackPriority = 0, n1(Ml, function() {
         return vm(), null;
       })) : (t.callbackNode = null, t.callbackPriority = 0), a = (e.flags & 13878) !== 0, (e.subtreeFlags & 13878) !== 0 || a) {
-        a = V.T, V.T = null, s = X.p, X.p = 2, f = bt, bt |= 4;
+        a = V.T, V.T = null, s = Z.p, Z.p = 2, f = bt, bt |= 4;
         try {
           Qv(t, e, n);
         } finally {
-          bt = f, X.p = s, V.T = a;
+          bt = f, Z.p = s, V.T = a;
         }
       }
       Jt = 1, mm(), pm(), ym();
@@ -7692,8 +7692,8 @@ Error generating stack: ` + a.message + `
       var t = Nn, e = Wi, n = (e.flags & 13878) !== 0;
       if ((e.subtreeFlags & 13878) !== 0 || n) {
         n = V.T, V.T = null;
-        var a = X.p;
-        X.p = 2;
+        var a = Z.p;
+        Z.p = 2;
         var s = bt;
         bt |= 4;
         try {
@@ -7742,7 +7742,7 @@ Error generating stack: ` + a.message + `
           }
           js = !!Er, xr = Er = null;
         } finally {
-          bt = s, X.p = a, V.T = n;
+          bt = s, Z.p = a, V.T = n;
         }
       }
       t.current = e, Jt = 2;
@@ -7754,14 +7754,14 @@ Error generating stack: ` + a.message + `
       var t = Nn, e = Wi, n = (e.flags & 8772) !== 0;
       if ((e.subtreeFlags & 8772) !== 0 || n) {
         n = V.T, V.T = null;
-        var a = X.p;
-        X.p = 2;
+        var a = Z.p;
+        Z.p = 2;
         var s = bt;
         bt |= 4;
         try {
           Xd(t, e.alternate, e);
         } finally {
-          bt = s, X.p = a, V.T = n;
+          bt = s, Z.p = a, V.T = n;
         }
       }
       Jt = 3;
@@ -7784,7 +7784,7 @@ Error generating stack: ` + a.message + `
         } catch {
         }
       if (a !== null) {
-        e = V.T, s = X.p, X.p = 2, V.T = null;
+        e = V.T, s = Z.p, Z.p = 2, V.T = null;
         try {
           for (var r = t.onRecoverableError, f = 0; f < a.length; f++) {
             var y = a[f];
@@ -7793,7 +7793,7 @@ Error generating stack: ` + a.message + `
             });
           }
         } finally {
-          V.T = e, X.p = s;
+          V.T = e, Z.p = s;
         }
       }
       (gn & 3) !== 0 && Es(), Fe(t), s = t.pendingLanes, (n & 261930) !== 0 && (s & 42) !== 0 ? t === cr ? Fa++ : (Fa = 0, cr = t) : Fa = 0, Wa(0);
@@ -7809,9 +7809,9 @@ Error generating stack: ` + a.message + `
     if (Jt !== 5) return !1;
     var t = Nn, e = or;
     or = 0;
-    var n = Ru(gn), a = V.T, s = X.p;
+    var n = Ru(gn), a = V.T, s = Z.p;
     try {
-      X.p = 32 > n ? 32 : n, V.T = null, n = rr, rr = null;
+      Z.p = 32 > n ? 32 : n, V.T = null, n = rr, rr = null;
       var r = Nn, f = gn;
       if (Jt = 0, Wi = Nn = null, gn = 0, (bt & 6) !== 0) throw Error(o(331));
       var y = bt;
@@ -7827,7 +7827,7 @@ Error generating stack: ` + a.message + `
         }
       return !0;
     } finally {
-      X.p = s, V.T = a, gm(t, e);
+      Z.p = s, V.T = a, gm(t, e);
     }
   }
   function Sm(t, e, n) {
@@ -9490,8 +9490,8 @@ Error generating stack: ` + a.message + `
   function Rs(t) {
     return typeof t.getRootNode == "function" ? t.getRootNode() : t.nodeType === 9 ? t : t.ownerDocument;
   }
-  var vn = X.d;
-  X.d = {
+  var vn = Z.d;
+  Z.d = {
     f: b1,
     r: A1,
     D: E1,
@@ -9972,21 +9972,21 @@ Error generating stack: ` + a.message + `
   function N1(t, e, n, a) {
     var s = V.T;
     V.T = null;
-    var r = X.p;
+    var r = Z.p;
     try {
-      X.p = 2, jr(t, e, n, a);
+      Z.p = 2, jr(t, e, n, a);
     } finally {
-      X.p = r, V.T = s;
+      Z.p = r, V.T = s;
     }
   }
   function w1(t, e, n, a) {
     var s = V.T;
     V.T = null;
-    var r = X.p;
+    var r = Z.p;
     try {
-      X.p = 8, jr(t, e, n, a);
+      Z.p = 8, jr(t, e, n, a);
     } finally {
-      X.p = r, V.T = s;
+      Z.p = r, V.T = s;
     }
   }
   function jr(t, e, n, a) {
@@ -10440,7 +10440,7 @@ Error generating stack: ` + a.message + `
         "19.2.8"
       )
     );
-  X.findDOMNode = function(t) {
+  Z.findDOMNode = function(t) {
     var e = t._reactInternals;
     if (e === void 0)
       throw typeof t.render == "function" ? Error(o(188)) : (t = Object.keys(t).join(","), Error(o(268, t)));
@@ -14534,7 +14534,7 @@ function k2({ children: i, isPresent: l, anchorX: u, anchorY: o, root: c, pop: d
         `), () => {
       p.current?.removeAttribute("data-motion-pop-id"), K.contains(it) && K.removeChild(it);
     };
-  }, [l]), Z.jsx(J2, { isPresent: l, childRef: p, sizeRef: g, pop: d, children: d === !1 ? i : Y.cloneElement(i, { ref: S }) });
+  }, [l]), X.jsx(J2, { isPresent: l, childRef: p, sizeRef: g, pop: d, children: d === !1 ? i : Y.cloneElement(i, { ref: S }) });
 }
 const F2 = ({ children: i, initial: l, isPresent: u, onExitComplete: o, custom: c, presenceAffectsLayout: d, mode: h, anchorX: p, anchorY: g, root: m }) => {
   const v = mu(W2), S = Y.useId(), b = Y.useRef(u), M = Y.useRef(o);
@@ -14561,7 +14561,7 @@ const F2 = ({ children: i, initial: l, isPresent: u, onExitComplete: o, custom: 
     v.forEach((w, L) => v.set(L, !1));
   }, [u]), Y.useEffect(() => {
     !u && !v.size && o && o();
-  }, [u]), i = Z.jsx(k2, { pop: h === "popLayout", isPresent: u, anchorX: p, anchorY: g, root: m, children: i }), Z.jsx(pu.Provider, { value: B, children: i });
+  }, [u]), i = X.jsx(k2, { pop: h === "popLayout", isPresent: u, anchorX: p, anchorY: g, root: m, children: i }), X.jsx(pu.Provider, { value: B, children: i });
 };
 function W2() {
   return /* @__PURE__ */ new Map();
@@ -14604,7 +14604,7 @@ const P2 = ({ children: i, custom: l, initial: u = !0, onExitComplete: o, presen
     return d === "wait" && it.length && (J = it), et(Ay(J)), H(b), null;
   }
   const { forceRender: K } = Y.useContext(Bc);
-  return Z.jsx(Z.Fragment, { children: q.map((J) => {
+  return X.jsx(X.Fragment, { children: q.map((J) => {
     const at = Zs(J), I = h && !v ? !1 : b === q || M.includes(at), pt = () => {
       if (L.current.has(at))
         return;
@@ -14617,7 +14617,7 @@ const P2 = ({ children: i, custom: l, initial: u = !0, onExitComplete: o, presen
         Pt || (vt = !1);
       }), vt && (K?.(), et(B.current), h && S?.(), o && o());
     };
-    return Z.jsx(F2, { isPresent: I, initial: !R.current || u ? void 0 : !1, custom: l, presenceAffectsLayout: c, mode: d, root: m, onExitComplete: I ? void 0 : pt, anchorX: p, anchorY: g, children: J }, at);
+    return X.jsx(F2, { isPresent: I, initial: !R.current || u ? void 0 : !1, custom: l, presenceAffectsLayout: c, mode: d, root: m, onExitComplete: I ? void 0 : pt, anchorX: p, anchorY: g, children: J }, at);
   }) });
 }, u0 = Y.createContext({ strict: !1 }), Ey = {
   animation: [
@@ -14723,7 +14723,7 @@ function nA({ children: i, isValidProp: l, ...u }) {
     u.reducedMotion,
     u.skipAnimations
   ]);
-  return Z.jsx(vl.Provider, { value: c, children: i });
+  return X.jsx(vl.Provider, { value: c, children: i });
 }
 const Tu = /* @__PURE__ */ Y.createContext({});
 function iA(i, l) {
@@ -14975,7 +14975,7 @@ function ic(i, { forwardMotionProps: l = !1, type: u } = {}, o, c) {
       const w = bA(b);
       S = w.MeasureLayout, R.visualElement = gA(i, B, b, c, w.ProjectionNode, d);
     }
-    return Z.jsxs(Tu.Provider, { value: R, children: [S && R.visualElement ? Z.jsx(S, { visualElement: R.visualElement, ...b }) : null, cA(i, m, yA(B, R.visualElement, v), B, M, l, d)] });
+    return X.jsxs(Tu.Provider, { value: R, children: [S && R.visualElement ? X.jsx(S, { visualElement: R.visualElement, ...b }) : null, cA(i, m, yA(B, R.visualElement, v), B, M, l, d)] });
   }
   p.displayName = `motion.${typeof i == "string" ? i : `create(${i.displayName ?? i.name ?? ""})`}`;
   const g = Y.forwardRef(p);
@@ -15633,7 +15633,7 @@ class ZA extends Y.Component {
 }
 function S0(i) {
   const [l, u] = s0(), o = Y.useContext(Bc);
-  return Z.jsx(ZA, { ...i, layoutGroup: o, switchLayoutGroup: Y.useContext(m0), isPresent: l, safeToRemove: u });
+  return X.jsx(ZA, { ...i, layoutGroup: o, switchLayoutGroup: Y.useContext(m0), isPresent: l, safeToRemove: u });
 }
 const QA = {
   pan: {
@@ -15803,74 +15803,74 @@ function oE({ data: i, setStateValue: l, setTriggerValue: u }) {
   }, b = (M) => {
     g(M), l("response_action", M), m("treasury");
   };
-  return /* @__PURE__ */ Z.jsx(nA, { reducedMotion: "user", transition: { duration: 0.2 }, children: /* @__PURE__ */ Z.jsxs("section", { className: "experience", "aria-labelledby": "experience-title", children: [
-    /* @__PURE__ */ Z.jsxs("header", { className: "hero", children: [
-      /* @__PURE__ */ Z.jsx("p", { className: "eyebrow", children: "TRADE TREASURY PRE-CHECK" }),
-      /* @__PURE__ */ Z.jsx("h1", { id: "experience-title", children: i.product.title }),
-      /* @__PURE__ */ Z.jsx("p", { children: i.product.subtitle })
+  return /* @__PURE__ */ X.jsx(nA, { reducedMotion: "user", transition: { duration: 0.2 }, children: /* @__PURE__ */ X.jsxs("section", { className: "experience", "aria-labelledby": "experience-title", children: [
+    /* @__PURE__ */ X.jsxs("header", { className: "hero", children: [
+      /* @__PURE__ */ X.jsx("p", { className: "eyebrow", children: "TRADE TREASURY PRE-CHECK" }),
+      /* @__PURE__ */ X.jsx("h1", { id: "experience-title", children: i.product.title }),
+      /* @__PURE__ */ X.jsx("p", { children: i.product.subtitle })
     ] }),
-    /* @__PURE__ */ Z.jsx("nav", { className: "stages", "aria-label": "사전점검 단계", children: i.stages.map((M) => {
+    /* @__PURE__ */ X.jsx("nav", { className: "stages", "aria-label": "사전점검 단계", children: i.stages.map((M) => {
       const R = sE[M.id], B = o === M.id;
-      return /* @__PURE__ */ Z.jsxs("button", { className: `stage stage--${B ? "active" : M.state}`, type: "button", disabled: M.state === "blocked", "aria-current": B ? "step" : void 0, onClick: () => v(M), children: [
-        /* @__PURE__ */ Z.jsx(R, { size: 19, "aria-hidden": !0 }),
-        /* @__PURE__ */ Z.jsx("span", { children: M.label }),
-        B && /* @__PURE__ */ Z.jsx(Js.span, { className: "stage-indicator", layoutId: "stage-indicator" })
+      return /* @__PURE__ */ X.jsxs("button", { className: `stage stage--${B ? "active" : M.state}`, type: "button", disabled: M.state === "blocked", "aria-current": B ? "step" : void 0, onClick: () => v(M), children: [
+        /* @__PURE__ */ X.jsx(R, { size: 19, "aria-hidden": !0 }),
+        /* @__PURE__ */ X.jsx("span", { children: M.label }),
+        B && /* @__PURE__ */ X.jsx(Js.span, { className: "stage-indicator", layoutId: "stage-indicator" })
       ] }, M.id);
     }) }),
-    /* @__PURE__ */ Z.jsx(P2, { mode: "wait", children: /* @__PURE__ */ Z.jsxs(Js.div, { className: "stage-panel", initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0 }, children: [
-      /* @__PURE__ */ Z.jsx("h2", { children: uE[o] }),
-      o === "deal" && /* @__PURE__ */ Z.jsxs(Z.Fragment, { children: [
-        /* @__PURE__ */ Z.jsx("div", { className: "fact-grid", children: i.dealFacts.map((M) => /* @__PURE__ */ Z.jsxs("div", { children: [
-          /* @__PURE__ */ Z.jsx("span", { children: M.label }),
-          /* @__PURE__ */ Z.jsx("strong", { children: M.value }),
-          /* @__PURE__ */ Z.jsx("small", { children: M.source })
+    /* @__PURE__ */ X.jsx(P2, { mode: "wait", children: /* @__PURE__ */ X.jsxs(Js.div, { className: "stage-panel", initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0 }, children: [
+      /* @__PURE__ */ X.jsx("h2", { children: uE[o] }),
+      o === "deal" && /* @__PURE__ */ X.jsxs(X.Fragment, { children: [
+        /* @__PURE__ */ X.jsx("div", { className: "fact-grid", children: i.dealFacts.map((M) => /* @__PURE__ */ X.jsxs("div", { children: [
+          /* @__PURE__ */ X.jsx("span", { children: M.label }),
+          /* @__PURE__ */ X.jsx("strong", { children: M.value }),
+          /* @__PURE__ */ X.jsx("small", { children: M.source })
         ] }, M.label)) }),
-        /* @__PURE__ */ Z.jsx("button", { className: "primary-action", type: "button", onClick: () => m("liquidity"), children: "회사 유동성 확인" })
+        /* @__PURE__ */ X.jsx("button", { className: "primary-action", type: "button", onClick: () => m("liquidity"), children: "회사 유동성 확인" })
       ] }),
-      o === "liquidity" && /* @__PURE__ */ Z.jsxs(Z.Fragment, { children: [
-        /* @__PURE__ */ Z.jsxs("div", { className: "insight", children: [
-          /* @__PURE__ */ Z.jsxs("div", { children: [
-            /* @__PURE__ */ Z.jsx("span", { children: "거래만 본 은행 필요액" }),
-            /* @__PURE__ */ Z.jsx("strong", { children: i.insight.deal })
+      o === "liquidity" && /* @__PURE__ */ X.jsxs(X.Fragment, { children: [
+        /* @__PURE__ */ X.jsxs("div", { className: "insight", children: [
+          /* @__PURE__ */ X.jsxs("div", { children: [
+            /* @__PURE__ */ X.jsx("span", { children: "거래만 본 은행 필요액" }),
+            /* @__PURE__ */ X.jsx("strong", { children: i.insight.deal })
           ] }),
-          /* @__PURE__ */ Z.jsxs("div", { children: [
-            /* @__PURE__ */ Z.jsx("span", { children: "회사 자금계획 포함 Peak 부족" }),
-            /* @__PURE__ */ Z.jsx("strong", { children: i.insight.company })
+          /* @__PURE__ */ X.jsxs("div", { children: [
+            /* @__PURE__ */ X.jsx("span", { children: "회사 자금계획 포함 Peak 부족" }),
+            /* @__PURE__ */ X.jsx("strong", { children: i.insight.company })
           ] }),
-          /* @__PURE__ */ Z.jsxs("div", { children: [
-            /* @__PURE__ */ Z.jsx("span", { children: "미사용 한도 적용 후" }),
-            /* @__PURE__ */ Z.jsx("strong", { children: i.insight.afterCredit })
+          /* @__PURE__ */ X.jsxs("div", { children: [
+            /* @__PURE__ */ X.jsx("span", { children: "미사용 한도 적용 후" }),
+            /* @__PURE__ */ X.jsx("strong", { children: i.insight.afterCredit })
           ] })
         ] }),
-        /* @__PURE__ */ Z.jsx("p", { className: "support", children: "거래 자체는 한도 내여도 회사의 기존 지급계획을 합치면 같은 시점의 유동성 판단이 달라질 수 있습니다." }),
-        /* @__PURE__ */ Z.jsx("button", { className: "primary-action", type: "button", onClick: () => m("treasury"), children: "Treasury 검토로 이동" })
+        /* @__PURE__ */ X.jsx("p", { className: "support", children: "거래 자체는 한도 내여도 회사의 기존 지급계획을 합치면 같은 시점의 유동성 판단이 달라질 수 있습니다." }),
+        /* @__PURE__ */ X.jsx("button", { className: "primary-action", type: "button", onClick: () => m("treasury"), children: "Treasury 검토로 이동" })
       ] }),
-      o === "treasury" && /* @__PURE__ */ Z.jsxs(Z.Fragment, { children: [
-        /* @__PURE__ */ Z.jsx("div", { className: "choice-grid", children: i.reviewGoals.map((M) => /* @__PURE__ */ Z.jsx("button", { className: `choice ${d === M.id ? "choice--selected" : ""}`, type: "button", onClick: () => {
+      o === "treasury" && /* @__PURE__ */ X.jsxs(X.Fragment, { children: [
+        /* @__PURE__ */ X.jsx("div", { className: "choice-grid", children: i.reviewGoals.map((M) => /* @__PURE__ */ X.jsx("button", { className: `choice ${d === M.id ? "choice--selected" : ""}`, type: "button", onClick: () => {
           h(M.id), l("review_goal", M.id);
         }, children: M.label }, M.id)) }),
-        p !== "none" && /* @__PURE__ */ Z.jsx("p", { className: "support", children: "선택한 대응조건을 아래 결정론적 비교에서 확인합니다." }),
-        /* @__PURE__ */ Z.jsx("button", { className: "primary-action", type: "button", onClick: () => m("review"), children: "거래 검토로 이동" })
+        p !== "none" && /* @__PURE__ */ X.jsx("p", { className: "support", children: "선택한 대응조건을 아래 결정론적 비교에서 확인합니다." }),
+        /* @__PURE__ */ X.jsx("button", { className: "primary-action", type: "button", onClick: () => m("review"), children: "거래 검토로 이동" })
       ] }),
-      o === "review" && /* @__PURE__ */ Z.jsxs(Z.Fragment, { children: [
-        /* @__PURE__ */ Z.jsx("p", { className: "support", children: "검토에 사용할 근거: 거래 분석 · Stress / 조건 경계 · 회사 유동성 / Treasury · 공식 결제 Context" }),
-        /* @__PURE__ */ Z.jsx("button", { className: "primary-action", type: "button", disabled: !i.reviewState.ready, onClick: S, children: "이 조건으로 거래 검토" })
+      o === "review" && /* @__PURE__ */ X.jsxs(X.Fragment, { children: [
+        /* @__PURE__ */ X.jsx("p", { className: "support", children: "검토에 사용할 근거: 거래 분석 · Stress / 조건 경계 · 회사 유동성 / Treasury · 공식 결제 Context" }),
+        /* @__PURE__ */ X.jsx("button", { className: "primary-action", type: "button", disabled: !i.reviewState.ready, onClick: S, children: "이 조건으로 거래 검토" })
       ] }),
-      o === "result" && /* @__PURE__ */ Z.jsx(Z.Fragment, { children: i.reviewState.loading ? /* @__PURE__ */ Z.jsx("p", { className: "support", children: "현재 거래 근거를 확인하고 있습니다." }) : i.reviewState.error ? /* @__PURE__ */ Z.jsx("p", { className: "error", children: i.reviewState.error }) : i.reviewState.current ? /* @__PURE__ */ Z.jsxs(Js.div, { initial: { opacity: 0 }, animate: { opacity: 1 }, children: [
-        /* @__PURE__ */ Z.jsx("h3", { children: i.reviewState.headline }),
-        /* @__PURE__ */ Z.jsx("p", { children: i.reviewState.summary }),
-        i.reviewState.usedTools?.length ? /* @__PURE__ */ Z.jsxs("p", { className: "support", children: [
+      o === "result" && /* @__PURE__ */ X.jsx(X.Fragment, { children: i.reviewState.loading ? /* @__PURE__ */ X.jsx("p", { className: "support", children: "현재 거래 근거를 확인하고 있습니다." }) : i.reviewState.error ? /* @__PURE__ */ X.jsx("p", { className: "error", children: i.reviewState.error }) : i.reviewState.current ? /* @__PURE__ */ X.jsxs(Js.div, { initial: { opacity: 0 }, animate: { opacity: 1 }, children: [
+        /* @__PURE__ */ X.jsx("h3", { children: i.reviewState.headline }),
+        /* @__PURE__ */ X.jsx("p", { children: i.reviewState.summary }),
+        i.reviewState.usedTools?.length ? /* @__PURE__ */ X.jsxs("p", { className: "support", children: [
           "확인 완료 · ",
           i.reviewState.usedTools.join(" · ")
         ] }) : null,
-        /* @__PURE__ */ Z.jsx("h3", { children: "어떤 조건을 바꿔볼까요?" }),
-        /* @__PURE__ */ Z.jsx("div", { className: "choice-grid", children: i.responseActions.map((M) => /* @__PURE__ */ Z.jsx("button", { className: "choice", type: "button", onClick: () => b(M.id), children: M.label }, M.id)) })
-      ] }) : /* @__PURE__ */ Z.jsx("p", { className: "support", children: "조건이 변경되어 다시 검토가 필요합니다." }) })
+        /* @__PURE__ */ X.jsx("h3", { children: "어떤 조건을 바꿔볼까요?" }),
+        /* @__PURE__ */ X.jsx("div", { className: "choice-grid", children: i.responseActions.map((M) => /* @__PURE__ */ X.jsx("button", { className: "choice", type: "button", onClick: () => b(M.id), children: M.label }, M.id)) })
+      ] }) : i.reviewState.hasResult ? /* @__PURE__ */ X.jsx("p", { className: "support", children: "조건이 변경되어 다시 검토가 필요합니다." }) : /* @__PURE__ */ X.jsx("p", { className: "support", children: "거래 검토 결과를 준비하고 있습니다." }) })
     ] }, o) }),
-    /* @__PURE__ */ Z.jsx("div", { className: "snapshot-grid", children: i.snapshot.map((M) => /* @__PURE__ */ Z.jsxs(Js.article, { className: `snapshot-card snapshot-card--${M.status}`, whileHover: { y: -2 }, children: [
-      /* @__PURE__ */ Z.jsx("span", { children: M.label }),
-      /* @__PURE__ */ Z.jsx("strong", { children: M.value }),
-      /* @__PURE__ */ Z.jsx("small", { children: M.detail })
+    /* @__PURE__ */ X.jsx("div", { className: "snapshot-grid", children: i.snapshot.map((M) => /* @__PURE__ */ X.jsxs(Js.article, { className: `snapshot-card snapshot-card--${M.status}`, whileHover: { y: -2 }, children: [
+      /* @__PURE__ */ X.jsx("span", { children: M.label }),
+      /* @__PURE__ */ X.jsx("strong", { children: M.value }),
+      /* @__PURE__ */ X.jsx("small", { children: M.detail })
     ] }, M.label)) })
   ] }) });
 }
@@ -15880,7 +15880,7 @@ const ks = /* @__PURE__ */ new WeakMap(), cE = (i) => {
     throw new Error("React root element not found");
   let u = ks.get(i.parentElement);
   return u || (u = $1.createRoot(l), ks.set(i.parentElement, u)), u.render(
-    /* @__PURE__ */ Z.jsx(Y.StrictMode, { children: /* @__PURE__ */ Z.jsx(
+    /* @__PURE__ */ X.jsx(Y.StrictMode, { children: /* @__PURE__ */ X.jsx(
       oE,
       {
         data: i.data,
