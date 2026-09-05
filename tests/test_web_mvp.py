@@ -244,7 +244,7 @@ class WebMvpTests(unittest.TestCase):
         ) as extraction:
             app = self.render()
             switch_view(app, "setup")
-            element_by_key(app.toggle, "show_documents").set_value(True).run()
+            element_by_key(app.button, "show_documents_action").click().run()
             element_by_key(app.button, "analyze_demo_documents").click().run()
             self.assertEqual(list(app.exception), [])
         return app, extraction
@@ -268,6 +268,26 @@ class WebMvpTests(unittest.TestCase):
             self.assertEqual(len(app.number_input), 0, view)
             self.assertEqual(len(app.slider), 0, view)
 
+    def test_setup_disclosures_are_actions_and_base_is_compact(self):
+        app = self.render()
+        self.assertIn("기본 조건", visible(app))
+        self.assertNotIn("마진 · 기본 → 기본", visible(app))
+        switch_view(app, "setup")
+        action_keys = {item.key for item in app.button}
+        self.assertTrue({
+            "edit_deal_action", "show_documents_action",
+            "edit_company_action", "edit_cash_plan_action",
+        }.issubset(action_keys))
+        self.assertEqual(len(app.toggle), 0)
+
+    def test_report_metadata_is_wrapping_content_not_kpis(self):
+        app = self.render()
+        switch_view(app, "report")
+        text = visible(app)
+        for label in ("현재 상태", "생성 기준", "공식 데이터"):
+            self.assertIn(label, text)
+        self.assertEqual(len(app.metric), 0)
+
     def test_canonical_connected_relationship_and_chart(self):
         app = self.render()
         text = visible(app)
@@ -282,7 +302,7 @@ class WebMvpTests(unittest.TestCase):
         selector = element_by_key(app.radio, "selected_scenario")
         for label, margin in (("USD -5%", "11.20%"), ("복합 악화", "8.83%"), ("기본", "14.64%")):
             selector.set_value(label).run()
-            self.assertIn(margin, [x.value for x in app.metric])
+            self.assertIn(margin, visible(app))
             self.assertEqual(len(app.number_input), 0)
             self.assertFalse(any("계산" in x.label for x in app.button))
 
@@ -293,34 +313,34 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(len(app.slider), 0)
         element_by_key(app.number_input, "custom_usd_input").set_value(1330.0)
         element_by_key(app.button, "FormSubmitter:custom_scenario_form-적용").click().run()
-        self.assertIn("11.20%", [x.value for x in app.metric])
+        self.assertIn("11.20%", visible(app))
 
     def test_target_is_opt_in_exact_preference(self):
         app = self.render()
-        element_by_key(app.toggle, "edit_target").set_value(True).run()
+        element_by_key(app.button, "edit_target_action").click().run()
         self.assertEqual(len(app.number_input), 1)
         element_by_key(app.number_input, "target_margin_input").set_value(20.0)
         element_by_key(app.button, "FormSubmitter:target_form-적용").click().run()
         self.assertIn("목표마진", visible(app))
         self.assertEqual(app.session_state["target_margin_input"], 20.0)
-        self.assertIn("14.64%", [x.value for x in app.metric])
+        self.assertIn("14.64%", visible(app))
 
     def test_manual_fact_form_and_persistence(self):
         app = self.render()
         switch_view(app, "setup")
         self.assertIn("거래 정보", visible(app))
-        element_by_key(app.toggle, "edit_deal").set_value(True).run()
+        element_by_key(app.button, "edit_deal_action").click().run()
         element_by_key(app.number_input, "sale_amount_input").set_value(110000.0)
         element_by_key(app.button, "FormSubmitter:deal_form-변경사항 적용").click().run()
         switch_view(app, "analysis")
         self.assertEqual(app.session_state["sale_amount_input"], 110000.0)
         self.assertEqual(list(app.exception), [])
-        self.assertNotEqual(app.metric[0].value, "14.64%")
+        self.assertIn("110,000", visible(app))
 
     def test_company_form_reuses_credit_line_and_changes_residual(self):
         app = self.render()
         switch_view(app, "setup")
-        element_by_key(app.toggle, "edit_company").set_value(True).run()
+        element_by_key(app.button, "edit_company_action").click().run()
         element_by_key(app.number_input, "credit_total_limit_input").set_value(110000000.0)
         element_by_key(app.button, "FormSubmitter:company_form-변경사항 적용").click().run()
         switch_view(app, "analysis")
@@ -330,7 +350,7 @@ class WebMvpTests(unittest.TestCase):
     def test_cash_plan_persists_when_editor_unmounted(self):
         app = self.render()
         switch_view(app, "setup")
-        element_by_key(app.toggle, "edit_cash_plan").set_value(True).run()
+        element_by_key(app.button, "edit_cash_plan_action").click().run()
         rows = list(app.session_state["company_cash_plan_rows"])
         self.assertIn("ERP 파일 가져오기", [x.label for x in app.tabs])
         switch_view(app, "analysis")
@@ -349,30 +369,31 @@ class WebMvpTests(unittest.TestCase):
 
     def test_response_before_after_delta_and_principal_boundary(self):
         app = self.render()
-        labels = [x.label for x in app.metric]
-        for label in ("현재", "대안", "변화"):
-            self.assertIn(label, labels)
-        self.assertIn("D+65", [x.value for x in app.metric])
-        self.assertIn("4,200만원", [x.value for x in app.metric])
+        text = visible(app)
+        self.assertIn("현재", text)
+        self.assertIn("대안", text)
+        self.assertIn("변화", text)
+        self.assertIn("D+65", text)
+        self.assertIn("4,200만원", text)
         self.assertIn("총 은행원금", visible(app))
         self.assertIn("줄어드는 것은 아닙니다", visible(app))
 
     def test_receivable_edit_only_required_fields(self):
         app = self.render()
-        element_by_key(app.toggle, "edit_receivable").set_value(True).run()
+        element_by_key(app.button, "edit_receivable_action").click().run()
         self.assertEqual(len(app.number_input), 3)
         element_by_key(app.number_input, "receivable_purchase_day_input").set_value(60)
         element_by_key(app.button, "FormSubmitter:receivable_form-적용").click().run()
-        self.assertIn("D+60", [x.value for x in app.metric])
+        self.assertIn("D+60", visible(app))
         self.assertEqual(list(app.exception), [])
 
     def test_usance_edit_recalculates_existing_comparison(self):
         app = self.render()
-        element_by_key(app.toggle, "edit_usance").set_value(True).run()
+        element_by_key(app.button, "edit_usance_action").click().run()
         element_by_key(app.number_input, "usance_repayment_day_input").set_value(100)
         element_by_key(app.button, "FormSubmitter:usance_form-적용").click().run()
         self.assertEqual(list(app.exception), [])
-        self.assertNotIn("54.94만원", [x.value for x in app.metric])
+        self.assertNotIn("54.94만원", visible(app))
 
     def test_report_output_only_and_no_ai_prerequisite(self):
         app = self.render()
@@ -470,7 +491,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app = AppTest.from_file(Path(__file__).parents[1] / "app.py", default_timeout=30).run()
             switch_view(app, "setup")
-            element_by_key(app.toggle, "show_documents").set_value(True).run()
+            element_by_key(app.button, "show_documents_action").click().run()
             element_by_key(app.radio, "document_source").set_value("내 PDF 업로드").run()
             extraction.assert_not_called()
             element_by_key(app.button, "analyze_demo_documents").click().run()
@@ -488,7 +509,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app = AppTest.from_file(Path(__file__).parents[1] / "app.py", default_timeout=30).run()
             switch_view(app, "setup")
-            element_by_key(app.toggle, "show_documents").set_value(True).run()
+            element_by_key(app.button, "show_documents_action").click().run()
             element_by_key(app.radio, "document_source").set_value("내 PDF 업로드").run()
             element_by_key(app.button, "analyze_demo_documents").click().run()
             self.assertTrue(app.warning)

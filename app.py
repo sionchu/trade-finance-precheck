@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
+from html import escape
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -326,13 +327,44 @@ def applied_notice():
     st.session_state["input_origin"] = "직접 입력"
 
 
-def compare_values(label, before, after, delta):
-    with st.container(key="comparison_" + label):
-        st.markdown("**" + label + "**")
-        cols = st.columns(3)
-        cols[0].metric("현재", before)
-        cols[1].metric("대안", after)
-        cols[2].metric("변화", delta, delta_color="off")
+SECTION_ICONS = {
+    "deal": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8"/>',
+    "company": '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01"/>',
+    "analysis": '<path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>',
+    "scenario": '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+    "response": '<path d="m16 3 4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16"/>',
+    "ai": '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>',
+    "report": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/>',
+}
+
+
+def section_heading(title, subtitle, icon):
+    st.markdown(
+        '<div class="section-heading-row"><span class="section-icon-tile" aria-hidden="true">'
+        f'<svg viewBox="0 0 24 24">{SECTION_ICONS[icon]}</svg></span>'
+        f'<span><strong>{escape(title)}</strong><small>{escape(subtitle)}</small></span></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def disclosure_button(label, key):
+    opened = bool(st.session_state.get(key, False))
+    if st.button("닫기" if opened else label, key=f"{key}_action", type="secondary"):
+        opened = not opened
+        st.session_state[key] = opened
+    return opened
+
+
+def compare_values(label, before, after, delta, *, tone="neutral"):
+    st.markdown(
+        '<div class="scenario-metric">'
+        f'<div class="scenario-metric-label">{escape(label)}</div>'
+        '<div class="scenario-value-flow">'
+        f'<span>{escape(str(before))}</span><b aria-hidden="true">→</b><strong>{escape(str(after))}</strong>'
+        f'<em class="scenario-delta scenario-delta--{tone}">{escape(str(delta))}</em>'
+        '</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 st.set_page_config(page_title="수출거래 AI 금융진단", layout="wide")
@@ -345,19 +377,22 @@ trade_treasury_experience()
 active_view = get_experience_state()["active_view"]
 
 if active_view == "setup":
-    st.subheader("거래 정보")
-    st.write(
-        f"수출대금 **USD {st.session_state['sale_amount_input']:,.0f}** · "
-        f"결제방식 **{'O/A' if st.session_state['payment_method_input'] == 'OA' else 'T/T'}** · "
-        f"대금 회수 **D+{st.session_state['collection_day_input']}**"
+    section_heading("거래 정보", "계약 조건과 주요 비용", "deal")
+    st.markdown(
+        '<div class="summary-surface"><div class="summary-primary">'
+        f"USD {st.session_state['sale_amount_input']:,.0f} · "
+        f"{'O/A' if st.session_state['payment_method_input'] == 'OA' else 'T/T'} · "
+        f"D+{st.session_state['collection_day_input']}</div>"
+        f'<div class="summary-support">외화비용 USD {st.session_state["usd_payable_amount_input"]:,.0f} · '
+        f'JPY {st.session_state["jpy_payable_amount_input"]:,.0f}</div>'
+        f'<span class="status-badge status-badge--neutral">{escape(origin)}</span></div>',
+        unsafe_allow_html=True,
     )
-    st.write(
-        f"주요 외화비용 **USD {st.session_state['usd_payable_amount_input']:,.0f} · "
-        f"JPY {st.session_state['jpy_payable_amount_input']:,.0f}**"
-    )
-    st.caption("출처 · " + origin)
-    edit_deal = st.toggle("거래 정보 수정", key="edit_deal")
-    show_documents = st.toggle("거래서류 불러오기", key="show_documents")
+    action_cols = st.columns([1, 1, 5])
+    with action_cols[0]:
+        edit_deal = disclosure_button("정보 수정", "edit_deal")
+    with action_cols[1]:
+        show_documents = disclosure_button("서류 불러오기", "show_documents")
     if edit_deal:
         with st.form("deal_form"):
             st.markdown("#### 매출")
@@ -385,18 +420,24 @@ if active_view == "setup":
     company_setup_slot = st.container()
 
     with company_setup_slot:
-        st.subheader("회사 정보")
-        st.write(
-            f"현재 가용현금 **{krw_consumer(decimal_from_widget(st.session_state['company_current_available_cash']))}** · "
-            f"최소 운영자금 **{krw_consumer(decimal_from_widget(st.session_state['company_minimum_operating_cash']))}**"
+        section_heading("회사 정보", "현재 자금여력과 거래 배정조건", "company")
+        company_rows = (
+            ("가용현금", krw_consumer(decimal_from_widget(st.session_state['company_current_available_cash']))),
+            ("최소 운영자금", krw_consumer(decimal_from_widget(st.session_state['company_minimum_operating_cash']))),
+            ("거래 배정자금", krw_consumer(decimal_from_widget(st.session_state['available_cash_input']))),
+            ("미사용 한도", krw_consumer(decimal_from_widget(st.session_state['credit_total_limit_input'] - st.session_state['credit_used_amount_input']))),
+            ("현재 조달금리", f"{st.session_state['funding_rate_input']:.2f}%"),
         )
-        st.write(
-            f"이번 거래 배정자금 **{krw_consumer(decimal_from_widget(st.session_state['available_cash_input']))}** · "
-            f"현재 미사용 한도 **{krw_consumer(decimal_from_widget(st.session_state['credit_total_limit_input'] - st.session_state['credit_used_amount_input']))}** · "
-            f"현재 조달금리 **{st.session_state['funding_rate_input']:.2f}%**"
-        )
-        st.caption("거래 배정자금과 회사 전체 현재 현금은 서로 다른 입력입니다.")
-        if st.toggle("회사 정보 수정", key="edit_company"):
+        st.markdown('<div class="summary-surface summary-grid">' + ''.join(
+            f'<div class="summary-row"><span>{escape(label)}</span><strong>{escape(value)}</strong></div>'
+            for label, value in company_rows
+        ) + '<p class="summary-note">거래 배정자금과 회사 전체 현재 현금은 서로 다른 입력입니다.</p></div>', unsafe_allow_html=True)
+        company_actions = st.columns([1, 1, 5])
+        with company_actions[0]:
+            edit_company = disclosure_button("정보 수정", "edit_company")
+        with company_actions[1]:
+            edit_cash_plan = disclosure_button("자금계획 보기", "edit_cash_plan")
+        if edit_company:
             with st.form("company_form"):
                 number("현재 가용현금", "company_current_available_cash", step=1000000.0)
                 number("최소 운영자금", "company_minimum_operating_cash", step=1000000.0)
@@ -407,7 +448,7 @@ if active_view == "setup":
                 number("이 거래에 추가로 발생하는 한도 수수료", "credit_deal_fee_input", step=100000.0)
                 st.date_input("거래 검토 기준일", key="company_liquidity_as_of_date")
                 st.form_submit_button("변경사항 적용", on_click=applied_notice)
-        if st.toggle("자금계획 확인", key="edit_cash_plan"):
+        if edit_cash_plan:
             manual_tab, erp_tab = st.tabs(["직접 입력", "ERP 파일 가져오기"])
             with manual_tab:
                 st.caption("이번 거래를 제외한 기존 지급·수금만 입력합니다.")
@@ -886,9 +927,13 @@ if active_view == "analysis":
         conclusion = f"{margin_copy}, 회사 전체 자금계획 기준 {krw_consumer(gap)}이 부족합니다."
     else:
         conclusion = ("현재 거래는 목표마진을 충족하고" if meets_target else "현재 거래는 목표마진에 미달하지만") + ", 회사 전체 자금계획은 현재 한도 내입니다."
-    st.markdown("### " + conclusion)
-    st.caption(f"현재 마진 {percent(base_result.financing_adjusted_deal_margin)} · 목표마진 {percent(deal.target_margin)}")
-    if st.toggle("목표마진 수정", key="edit_target"):
+    st.markdown('<div class="decision-hero"><h2>' + escape(conclusion) + '</h2><div class="status-row">'
+                f'<span class="status-badge status-badge--{"success" if meets_target else "danger"}">' +
+                ('✓ 목표마진 충족' if meets_target else '목표마진 미달') + '</span>' +
+                (f'<span class="status-badge status-badge--danger">! 자금부족 {escape(krw_consumer(gap))}</span>' if gap and gap > 0 else '') +
+                '</div><p>현재 마진 ' + escape(percent(base_result.financing_adjusted_deal_margin)) +
+                ' · 목표마진 ' + escape(percent(deal.target_margin)) + '</p></div>', unsafe_allow_html=True)
+    if disclosure_button("목표마진 수정", "edit_target"):
         with st.form("target_form"):
             number("목표 마진 (%)", "target_margin_input", maximum=100.0, step=0.1)
             if st.form_submit_button("적용"):
@@ -904,18 +949,14 @@ if active_view == "analysis":
             '<div class="funding-relationship">'
             '<div><span>이번 거래 필요 외부자금</span><strong>' +
             krw_consumer(base_result.funding.maximum_external_borrowing_krw) +
-            '</strong></div><div class="flow-connector">→<small>회사 기존 일정 포함</small></div>'
+            '</strong></div><div class="flow-connector"><b>+</b><small>회사 기존 일정</small></div>'
             '<div><span>회사 전체 최대 자금부족</span><strong>' +
             krw_consumer(company_with_deal.peak_liquidity_gap_krw) +
-            '</strong></div><div class="flow-connector">→<small>현재 미사용 한도 ' + unused +
+            '</strong><small class="peak-date">가장 부족한 날 · ' + company_with_deal.peak_liquidity_gap_date.isoformat() + ' · D+' + str((company_with_deal.peak_liquidity_gap_date - company_as_of_date).days) + '</small></div><div class="flow-connector"><b>−</b><small>현재 미사용 한도 ' + unused +
             '</small></div><div><span>남는 부족</span><strong>' + remaining + '</strong></div></div>',
             unsafe_allow_html=True,
         )
-        st.caption(
-            f"가장 부족한 날 · {company_with_deal.peak_liquidity_gap_date.isoformat()} · "
-            f"D+{(company_with_deal.peak_liquidity_gap_date - company_as_of_date).days}"
-        )
-        st.subheader("회사 현금흐름")
+        section_heading("회사 현금흐름", "기존 일정과 이번 거래를 함께 봅니다", "analysis")
         st.caption("EXPECTED 포함 사용자 선택 시나리오" if include_expected_company_events else "CONFIRMED 기준 · 기존 회사 일정과 이번 거래")
 
         chart_rows = [
@@ -942,9 +983,9 @@ if active_view == "analysis":
             "encoding": {
                 "x": {"field": "날짜", "type": "temporal", "axis": {"format": "%m/%d", "title": "날짜"}},
                 "y": {"field": "현금 (KRW)", "type": "quantitative", "axis": {"format": "~s"}},
-                "color": {"field": "구분", "type": "nominal", "legend": {"orient": "bottom", "columns": 1}},
+                "color": {"field": "구분", "type": "nominal", "scale": {"domain": ["이번 거래 포함", "회사 기존 계획", "최소 운영자금"], "range": ["#1d56c1", "#7b8794", "#c13b39"]}, "legend": {"orient": "bottom", "direction": "horizontal", "columns": 3, "title": None}},
                 "tooltip": [{"field": "날짜", "type": "temporal"}, {"field": "구분"}, {"field": "현금 (KRW)", "format": ",.0f"}],
-            }, "height": 280,
+            }, "height": 330,
         }, use_container_width=True)
 
         with st.expander("날짜별 현금과 지급·수금 내역"):
@@ -957,7 +998,7 @@ if active_view == "analysis":
                  "자금부족": str(p.required_external_funding_krw)}
                 for p in company_with_deal.points
             ], hide_index=True, width="stretch")
-    st.subheader("조건을 바꿔보면")
+    section_heading("조건을 바꿔보면", "현재 조건과 악화 상황을 비교합니다", "scenario")
     selected_label = st.radio(
         "비교할 조건", [*scenario_labels, "+ 직접 설정"],
         horizontal=True, key="selected_scenario",
@@ -984,18 +1025,28 @@ else:
     selected_scenario_result = scenario_results[scenario_labels[selected_label]]
 
 if active_view == "analysis":
-    compare_values("마진 · 기본 → " + selected_label,
-                   percent(base_result.financing_adjusted_deal_margin),
-                   percent(selected_scenario_result.financing_adjusted_deal_margin),
-                   f"{(selected_scenario_result.financing_adjusted_deal_margin - base_result.financing_adjusted_deal_margin) * 100:+.2f}%p")
-    compare_values("거래 필요 외부자금",
-                   krw_consumer(base_result.funding.maximum_external_borrowing_krw),
-                   krw_consumer(selected_scenario_result.funding.maximum_external_borrowing_krw),
-                   signed_krw_consumer(selected_scenario_result.funding.maximum_external_borrowing_krw - base_result.funding.maximum_external_borrowing_krw))
-    delay = selected_scenario_result.collection_day - base_result.collection_day
-    compare_values("회수",
-                   f"D+{base_result.collection_day}", f"D+{selected_scenario_result.collection_day}",
-                   f"{delay:+}일" if delay else "변화 없음")
+    if selected_label == "기본":
+        st.markdown(
+            '<div class="baseline-surface"><span class="status-badge status-badge--neutral">기본 조건</span>'
+            '<p>현재 기준값입니다.</p><div class="baseline-values">'
+            f'<span>마진 <strong>{escape(percent(base_result.financing_adjusted_deal_margin))}</strong></span>'
+            f'<span>거래 필요 외부자금 <strong>{escape(krw_consumer(base_result.funding.maximum_external_borrowing_krw))}</strong></span>'
+            f'<span>회수 <strong>D+{base_result.collection_day}</strong></span></div></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        margin_delta = selected_scenario_result.financing_adjusted_deal_margin - base_result.financing_adjusted_deal_margin
+        funding_delta = selected_scenario_result.funding.maximum_external_borrowing_krw - base_result.funding.maximum_external_borrowing_krw
+        delay = selected_scenario_result.collection_day - base_result.collection_day
+        st.markdown(f'<div class="scenario-name">기본 → <strong>{escape(selected_label)}</strong></div>', unsafe_allow_html=True)
+        compare_values("마진", percent(base_result.financing_adjusted_deal_margin),
+                       percent(selected_scenario_result.financing_adjusted_deal_margin),
+                       f"{margin_delta * 100:+.2f}%p", tone="danger" if margin_delta < 0 else "success" if margin_delta > 0 else "neutral")
+        compare_values("거래 필요 외부자금", krw_consumer(base_result.funding.maximum_external_borrowing_krw),
+                       krw_consumer(selected_scenario_result.funding.maximum_external_borrowing_krw),
+                       signed_krw_consumer(funding_delta), tone="warning" if funding_delta > 0 else "success" if funding_delta < 0 else "neutral")
+        compare_values("회수", f"D+{base_result.collection_day}", f"D+{selected_scenario_result.collection_day}",
+                       f"{delay:+}일" if delay else "변화 없음", tone="warning" if delay > 0 else "success" if delay < 0 else "neutral")
     with st.expander("전체 시나리오·목표마진 충족 조건"):
         st.dataframe([
             {"조건": label, "마진": percent(scenario_results[name].financing_adjusted_deal_margin),
@@ -1007,21 +1058,27 @@ if active_view == "analysis":
             st.write(f"목표마진 유지 USD/KRW 경계 · {target_threshold:,.2f}원")
         for option in rescue_analysis.options:
             render_rescue_option(option)
-    st.subheader("대응안 비교")
+    section_heading("대응안 비교", "현재 조건과 대안의 득실을 나란히 봅니다", "response")
     credit_tab, receivable_tab, forward_tab, usance_tab = st.tabs(
         ["기존 운전자금", "매출채권 조기 현금화", "선물환", "Banker's Usance"]
     )
     with credit_tab:
         if company_credit_capacity is not None:
-            st.write(f"회사 전체 부족 **{krw_consumer(company_liquidity_comparison.company_with_deal.peak_liquidity_gap_krw)}**")
-            st.write(f"현재 미사용 한도 **{krw_consumer(credit_line.unused_limit_krw)}** → 남는 부족 **{krw_consumer(company_credit_capacity.liquidity_gap_krw)}**")
+            st.markdown('<div class="response-summary"><strong>현재 운전자금</strong>' + ''.join(
+                f'<div class="summary-row"><span>{escape(label)}</span><strong>{escape(value)}</strong></div>'
+                for label, value in (
+                    ("회사 전체 부족", krw_consumer(company_liquidity_comparison.company_with_deal.peak_liquidity_gap_krw)),
+                    ("현재 미사용 한도", krw_consumer(credit_line.unused_limit_krw)),
+                    ("남는 부족", krw_consumer(company_credit_capacity.liquidity_gap_krw)),
+                )
+            ) + '</div>', unsafe_allow_html=True)
             st.caption("한도 수정은 입력 화면의 회사 정보에서 적용합니다.")
 
 
 if active_view == "analysis":
     with receivable_tab:
         receivable_result_slot = st.container()
-        if st.toggle("조건 수정", key="edit_receivable"):
+        if disclosure_button("조건 수정", "edit_receivable"):
             with st.form("receivable_form"):
                 number("매입일 (D+)", "receivable_purchase_day_input", minimum=0, step=1)
                 number("연 할인율 (%)", "receivable_discount_rate_input", step=0.1)
@@ -1029,7 +1086,7 @@ if active_view == "analysis":
                 st.form_submit_button("적용")
     with forward_tab:
         forward_result_slot = st.container()
-        if st.toggle("조건 수정", key="edit_forward"):
+        if disclosure_button("조건 입력", "edit_forward"):
             with st.form("forward_form"):
                 number("USD 헤지비율 (%)", "usd_hedge_ratio_input", maximum=100.0)
                 number("USD 선물환 매도환율", "usd_forward_quote_input", minimum=0.01)
@@ -1040,7 +1097,7 @@ if active_view == "analysis":
                 st.form_submit_button("적용")
     with usance_tab:
         usance_result_slot = st.container()
-        if st.toggle("조건 수정", key="edit_usance"):
+        if disclosure_button("조건 수정", "edit_usance"):
             with st.form("usance_form"):
                 st.selectbox(
                     "대상 외화 지급", range(len(deal.foreign_payables)),
@@ -1267,14 +1324,23 @@ tool_labels = {
 }
 custom_review_question = st.session_state.get("custom_deal_review_question", "")
 if active_view == "report":
-    st.subheader("현재 결과")
-    st.write(f"현재 마진 **{percent(base_result.financing_adjusted_deal_margin)}** · 목표 **{percent(deal.target_margin)}** · {'목표 충족' if meets_target else '목표 미달'}")
+    section_heading("현재 결과", "현재 조건의 핵심 결과만 요약합니다", "analysis")
+    report_rows = [
+        ("현재 마진", percent(base_result.financing_adjusted_deal_margin), f"목표 {percent(deal.target_margin)} · {'목표 충족' if meets_target else '목표 미달'}"),
+    ]
     if company_credit_capacity is not None:
-        st.write(f"회사 전체 최대 자금부족 **{krw_consumer(company_liquidity_comparison.company_with_deal.peak_liquidity_gap_krw)}** · 현재 한도 반영 후 부족 **{krw_consumer(company_credit_capacity.liquidity_gap_krw)}**")
-    st.caption(f"선택한 비교 · {selected_label} · 마진 {percent(selected_scenario_result.financing_adjusted_deal_margin)}. 보고서는 기본 조건과 기본 악화 가정를 포함합니다.")
-    st.subheader("AI 거래 검토")
-    st.caption("선택 사항 · 기본 조건과 현재 근거를 읽고 검토 의미를 정리합니다.")
-    with st.expander("질문 직접 수정"):
+        peak = company_liquidity_comparison.company_with_deal
+        report_rows.extend([
+            ("회사 전체 최대 자금부족", krw_consumer(peak.peak_liquidity_gap_krw), f"가장 부족한 날 · {peak.peak_liquidity_gap_date.isoformat()} · D+{(peak.peak_liquidity_gap_date - company_as_of_date).days}"),
+            ("현재 한도 반영 후 남는 부족", krw_consumer(company_credit_capacity.liquidity_gap_krw), f"미사용 한도 {krw_consumer(company_credit_capacity.unused_credit_limit_krw)}"),
+        ])
+    st.markdown('<div class="report-summary">' + ''.join(
+        f'<div class="report-summary-item"><span>{escape(label)}</span><strong>{escape(value)}</strong><small>{escape(meta)}</small></div>'
+        for label, value, meta in report_rows
+    ) + f'<div class="report-selection">선택한 비교 · <strong>{escape(selected_label)}</strong> · 마진 {escape(percent(selected_scenario_result.financing_adjusted_deal_margin))}</div></div>', unsafe_allow_html=True)
+    section_heading("AI 거래 검토", "현재 계산 근거의 확인 포인트를 짧게 정리합니다", "ai")
+    st.caption("선택 기능 · 금융 숫자는 다시 계산하지 않습니다.")
+    with st.expander("검토 질문 수정"):
         custom_review_question = st.text_area("검토 질문", value=custom_review_question,
                                              max_chars=400, key="custom_deal_review_question",
                                              placeholder=DEFAULT_REVIEW_QUESTION)
@@ -1579,12 +1645,16 @@ if active_view == "report":
             review_is_current=review_is_current,
         )
     )
-    st.subheader("PDF 보고서")
-    st.write("현재 입력 기준 계산과 현재 거래 검토를 최대 3페이지 보고서로 저장합니다.")
-    report_preview = st.columns(3)
-    report_preview[0].metric("현재 상태", "목표 충족" if meets_target else "목표 미달")
-    report_preview[1].metric("생성 기준", report_basis.replace("Deal", "거래"))
-    report_preview[2].metric("공식 데이터", official_context)
+    section_heading("PDF 보고서", "현재 계산 결과와 거래 검토를 최대 3페이지로 저장합니다", "report")
+    report_meta = (
+        ("현재 상태", "목표 충족" if meets_target else "목표 미달"),
+        ("생성 기준", report_basis.replace("Deal", "거래")),
+        ("공식 데이터", official_context),
+    )
+    st.markdown('<div class="report-meta">' + ''.join(
+        f'<div class="report-meta-row"><span>{escape(label)}</span><strong>{escape(value)}</strong></div>'
+        for label, value in report_meta
+    ) + '</div>', unsafe_allow_html=True)
     st.download_button(
         "보고서 다운로드",
         data=report_bytes,

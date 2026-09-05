@@ -21,7 +21,7 @@ The React shell uses `--surface`, `--surface-subtle`, `--surface-raised`, `--tex
 
 ### Typography
 
-Use the Streamlit/system sans-serif stack. Hero text is 28–36px/1.2, section labels 14–16px/1.4, primary values 24–30px/1.15, and supporting copy at least 16px on compact screens. A large number must always sit next to a label, context line, or visual relationship; do not leave standalone figures without meaning.
+Use the Streamlit/system sans-serif stack. The product title is compact at 29–38px, decision headlines are 23–30px, section titles are 21–25px, primary values are 26–32px, and supporting copy is 13–15px with comfortable line height. Setup facts use compact label/value rows instead of dashboard-sized figures. A large number must always sit next to a label, context line, or visual relationship; do not leave standalone figures without meaning.
 
 ### Spacing, layout, and surfaces
 
@@ -29,7 +29,7 @@ Use an 8px base rhythm, a centered 1180px maximum content width, and responsive 
 
 ### Icons
 
-Use Lucide outline icons at 18–20px. Icons supplement visible Korean labels and never carry meaning alone.
+Use Lucide outline icons at 18–20px. Major sections may use one 40px soft-blue icon tile; individual rows do not repeat icons. Icons supplement visible Korean labels and never carry meaning alone.
 
 ## Components
 
@@ -39,6 +39,9 @@ Use Lucide outline icons at 18–20px. Icons supplement visible Korean labels an
 - Warning and success states include explicit text such as `부족`, `한도 내`, or `목표 충족`.
 - Data-dense tables remain native Streamlit in the guided stage content.
 - Supporting explanations use quiet helper surfaces instead of blog-like prose.
+- Setup summaries use one restrained surface per subject and disclosure buttons for editing. Toggle controls are reserved for genuine on/off state.
+- Scenario presets read as wrapping chips. Base uses one compact baseline surface; non-Base comparisons use `current → option` plus a text delta.
+- Report metadata is a wrapping label/value list, not KPI metrics.
 
 ## Product language
 
