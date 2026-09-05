@@ -196,7 +196,7 @@ def _component_html() -> str:
         '<h2>용어·계산 기준</h2>'
         f'<div class="help-topic-list">{topics}</div>'
         '<p class="help-footnote">조건을 바꾼 뒤 이전 결과가 남아 있다면 상단의 '
-        '<strong>거래 검토</strong> 단계로 돌아가 현재 조건으로 다시 확인하세요.</p>'
+        '<strong>결과·보고서</strong> 단계에서 현재 조건으로 다시 검토하세요.</p>'
         "</div></details>"
     )
 
