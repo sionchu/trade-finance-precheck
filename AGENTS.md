@@ -2,53 +2,194 @@
 
 ## Authority
 
-- `docs/product-spec.md` is the authoritative product and implementation specification.
-- For UI work, read `/DESIGN.md` and use its semantic tokens and component rules instead of adding arbitrary visual values.
-- Start from the canonical Clean-v0 state. Do not reconstruct brainstorming history, discarded concepts, or superseded drafts.
-- If another document conflicts with `docs/product-spec.md`, follow `docs/product-spec.md`.
+- `docs/product-spec.md` is the authoritative current product and implementation specification.
+- `DESIGN.md` is authoritative for current UI/UX rules and semantic visual tokens.
+- `docs/submission.md` is the canonical submission-facing factual source.
+- `README.md` is for repository overview and developer run/test instructions.
+- If these documents conflict, follow `docs/product-spec.md` for product behavior and scope.
+- Do not reconstruct superseded brainstorming, T1–T6 patch history, five-stage navigation, or discarded product names.
 
-## Current gate
+## Current product
 
-- The deterministic Financial Engine v0.1, Deal Rescue / Negotiation Solver, Company Liquidity & Funding Choice, FX Treasury / Forward Hedge Simulation, Banker's Usance simulation, Company Liquidity Timeline, End-to-End Web MVP, accepted presentation layer, Trade Document Financialization, Financial Statement Financialization / Company Liquidity Profile, Treasury-integrated bounded Single Deal Review Agent, K-SURE public payment-context integration, Deal Pre-check Report, and public Streamlit deployment are implemented and frozen.
-- The Korea Eximbank reference-FX adapter is locally validated and deployment-deferred. Its public Streamlit runtime path is disabled because it is unreliable in that target environment.
-- Bank of Korea ECOS is validated and deferred; no ECOS adapter is implemented.
-- Do not modify frozen behavior unless a new, evidenced P0 correctness issue is established.
-- New application layers must consume frozen components through explicit boundaries. External API access must never move inside Financial Engine calculations.
-- The product is a Company-aware Trade Treasury Pre-check with three connected decision layers: frozen Deal Economics, authorized Company Liquidity, and authorized FX Treasury.
-- AI has exactly three product roles: Trade Document Financialization, Financial Statement Financialization, and the Single Deal Review Agent.
-- T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze is implemented. T6-A Company Liquidity Timeline, T6-B React Experience Shell, T6-C Guided Decision / Agent UX Orchestration, and T6-D final presentation/report/submission integration are frozen.
-- The product is a final submission candidate. No feature work is authorized; only evidenced P0 correctness or deployment fixes may be made before submission.
-- T6 authorizes the Company Liquidity Timeline, manual company cash-plan input, ERP export-file import, calendar-date company events, prospective Deal overlay, React Experience Shell, later Agent UX orchestration, report, and submission finalization. Do not start a later T6 slice while T6-B is active.
-- The shell is an internal precompiled Streamlit Components v2 React bundle. React remains presentation/orchestration-only; `active_stage` is component state, Python formats authoritative values, and Motion respects reduced-motion preferences. The canonical flow is 거래 정보 → 회사 자금 → 시나리오 분석 → 대응안 비교 → 종합 진단, with explicit base/scenario calculation boundaries and no fake tool progress, retry, or another Agent/tool.
-- Financial Statement AI extracts only explicitly supported liquidity facts and is frozen. It must not infer credit approval, bank lending capacity, company available cash, a credit score, default, or future cash flow. Deal-specific available company cash always requires explicit user confirmation.
-- Working-capital total limit and used amount are user-entered facts; unused limit is derived. `DealCase.annual_funding_rate` remains the borrowing-rate SSOT, and financial-statement cash never sets Deal-specific available cash.
-- FX Treasury classifies exposure per currency, treats same-currency receivables and payables as an amount-level offset rather than proof of a timing-matched hedge, and uses only user-supplied forward quotes and settlement spots. It forecasts and executes nothing. Its hedge profit/loss overlay does not recompute derivative-settlement funding schedules.
-- Payment method and financing structure are separate concepts. Core Deal payment methods remain OA / TT; do not create a generic `PAYMENT_USANCE` enum. The frozen Banker's Usance simulation is a narrow funding overlay for one selected foreign payable; it predicts no approval, executes nothing, and is not an FX hedge or full L/C / UPAS workflow.
-- The Single Deal Review Agent is a one-shot, bounded read-only explanation layer with exactly four local evidence tools. Its structured memo selects exactly one available `treasury_focus`; `supporting_signals` contains only always-available Deal-analysis evidence. Optional Company Liquidity and K-SURE context are rendered deterministically when loaded and are not model-selectable fields. Its Treasury tool only serializes already-computed T1–T4 evidence. A successful run uses exactly two API requests with no retry, never fetches external data, and includes Treasury, Company Liquidity, and K-SURE context in current-state freshness. Authoritative numbers remain deterministic UI output; the Agent must not calculate them, mutate the Deal, execute finance, or retain conversation history.
-- Company-wide liquidity uses a user-selected trade review `as_of_date`, Treasury-confirmed currently usable cash, a minimum operating-cash buffer, and existing company cash-plan events. The prospective Deal is overlaid only from frozen `dated_cashflows()`; it must not be duplicated in the company plan. Deal-level allocated cash remains a separate legacy engine input.
-- Do not advance outside the canonical gate sequence or add full L/C / UPAS / D/A / D/P workflows, FX forecasting, stochastic risk models, insurance or guarantee execution, actual hedge or loan execution, bank approval or buyer-default prediction, databases, authentication, multi-agent systems, RAG, arbitrary web search, EUR/CNY support, microservices, or speculative provider abstractions.
+Public product name:
+
+`수출거래 AI 금융진단`
+
+Public views are exactly:
+
+```text
+입력 | 분석 | 보고서
+```
+
+Default view is `분석`.
+
+The product is a final competition submission candidate. Treat implemented finance, AI boundaries, public data behavior, report generation and accepted presentation as frozen unless a new evidenced P0 correctness, security or deployment issue is established.
+
+## Frozen authority boundaries
+
+### Finance
+
+Python deterministic finance is authoritative for all financial numbers.
+
+Frozen areas include:
+
+- Deal economics and dated cashflow
+- external borrowing and funding cost
+- canonical Stress scenarios
+- Deal Rescue / deterministic thresholds
+- Company Liquidity Timeline
+- working-capital capacity and funding-choice comparison
+- O/A receivable early-purchase simulation
+- currency-level FX exposure and natural offset
+- forward-hedge simulation from user-supplied assumptions
+- Banker's Usance financing overlay
+
+React and AI must not calculate, round, infer or replace authoritative finance values.
+
+### Company liquidity
+
+- company-wide current usable cash is a user-confirmed company fact
+- minimum operating cash is a user-entered policy threshold
+- Deal-allocated cash remains distinct from company-wide current cash
+- working-capital total line and used amount are user-entered; unused line is derived
+- prospective Deal cashflow comes from the deterministic engine and must not be duplicated in company cash-plan rows
+- company liquidity gap is not bank approval, default prediction or a lending-capacity estimate
+
+### AI
+
+AI has exactly three product roles:
+
+1. Trade Document Financialization
+2. Financial Statement Financialization
+3. Single Deal Review Agent
+
+Trade Document AI extracts only document-supported facts and never calculates margin, FX exposure or funding need.
+
+Financial Statement AI extracts only explicit statement facts. It must not infer ratios, company available cash, Deal-available cash, lending capacity, credit approval, credit score, default risk or future cash flow.
+
+Single Deal Review Agent:
+
+- exactly four local read-only evidence tools
+- successful run = exactly two model requests
+- no retry
+- no external fetch
+- no authoritative calculation
+- no Deal mutation
+- no finance execution
+- no conversation-history retention
+- no FX/rate/default/bank-approval prediction
+- no product recommendation or ranking
+- headline and summary contain no numeric characters
+
+Authoritative numbers remain deterministic UI output.
+
+### External data
+
+External providers stay outside finance calculations.
+
+Current public state:
+
+- K-SURE aggregate payment context: implemented, explicit user action only
+- Korea Eximbank reference FX adapter: locally validated, public runtime disabled/deferred
+- Bank of Korea ECOS: researched/validated concept, no public adapter
+- OpenDART: not implemented
+
+Do not make application startup or core calculations depend on an external provider.
+
+### Report
+
+The PDF is generated from current deterministic evidence. Stale Agent prose must be excluded. Do not add model/API calls inside report generation.
+
+## Public security boundary
+
+The public MVP is a competition demonstration, not an enterprise document vault.
+
+- bundled demo documents and ERP data are fictional
+- no persistent application database or authentication layer exists
+- when a user explicitly runs Trade Document AI or Financial Statement AI, the selected PDF content is sent to the configured OpenAI API for structured extraction
+- those OpenAI requests use `store=False`
+- public-demo users should not be encouraged to upload real trade secrets, personal information or confidential corporate documents
+
+Do not claim zero leakage risk, guaranteed deletion, enterprise-grade tenant isolation or other unimplemented security controls.
+
+Future enterprise security controls belong in commercialization documentation only unless explicitly authorized for implementation.
+
+## Deferred scope
+
+Do not implement without an explicit new product-spec gate:
+
+- database / authentication
+- RAG / arbitrary web search
+- multi-agent architecture
+- microservices
+- speculative provider abstractions
+- full L/C / UPAS / D/A / D/P workflows
+- insurance / guarantee execution
+- real hedge / loan / payment execution
+- bank approval or buyer-default prediction
+- FX / rate forecasting
+- stochastic CFaR / Monte Carlo risk models
+- EUR / CNY engine expansion
+- live ERP / accounting / TMS / bank connectivity
+- OpenDART integration
+- public ECOS integration
+- public Korea Eximbank reference-FX activation
 
 ## Anti-bloat rules
 
-- Add only files and abstractions required by the current authorized gate.
-- Do not create duplicate spec variants or filenames containing `v0`, `v2`, `final`, `new`, or `refactored`.
-- Do not add dependencies, CI, issue templates, databases, authentication, RAG, multi-agent systems, provider/factory abstractions, microservices, or deployment configuration unless an explicit authorized gate requires them.
-- Do not create speculative packages for deferred financial options.
-- Preserve a single deterministic model; financial options modify cashflow or risk assumptions rather than introducing agent architectures.
+- Start from current canonical behavior, not historical patches.
+- Prefer modifying an existing canonical artifact over creating `new`, `v2`, `final`, `refactored` variants.
+- Do not add duplicate configuration, duplicate product copy or parallel UI paths.
+- Do not add dependencies unless the authorized change genuinely requires them.
+- Avoid wrappers, managers, factories and interfaces that do not reduce real complexity.
+- Remove obsolete compatibility code when a replacement is proven and accepted.
+- Do not add CI, issue templates or deployment infrastructure unless explicitly authorized.
 
 ## Evidence-first work
 
-- Never report expected, inferred, or simulated results as executed results.
-- Keep completed, not executed, blocked, and proposed work distinct.
-- Do not fabricate command output, tests, logs, screenshots, sources, files, or links.
-- Verify financial outputs against the canonical reference case and required invariants.
-- Run the complete applicable test suite and report the exact commands and results.
-- If an assumption is missing, report the ambiguity; do not silently invent it.
-- AI extraction or explanation must never mutate deterministic financial-engine values.
+- Read actual code, tests and current docs before proposing architecture changes.
+- Check imports, call sites, runtime behavior and tests before classifying code as dead.
+- Never report expected, inferred or simulated results as executed results.
+- Distinguish implemented, validated, deferred, blocked and proposed states.
+- Never fabricate commands, logs, screenshots, sources, files or links.
+- If a required assumption is missing, state the ambiguity rather than inventing it.
+
+## Verification
+
+Canonical Python verification:
+
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q src tests app.py components
+git diff --check
+```
+
+If frontend source changes:
+
+```powershell
+cd components\trade_treasury_experience\frontend
+npm ci
+npm run typecheck
+npm run build
+```
+
+Then rerun relevant Python tests because committed frontend build assets are runtime inputs.
+
+Public acceptance values are defined in `docs/product-spec.md`.
+
+Do not claim PASS for a command, browser viewport, Agent run, API call or PDF inspection unless it was actually executed.
 
 ## Change discipline
 
-- Preserve unrelated user changes.
-- Keep secrets and environment files out of Git.
-- Do not broaden scope without an explicit product-spec revision.
-- Preserve frozen component boundaries in later application work.
+When explicitly asked to modify the project:
+
+1. preserve unrelated user changes;
+2. choose the smallest coherent scope;
+3. keep frozen finance/AI contracts unless the issue directly requires a change;
+4. modify canonical artifacts rather than adding parallel versions;
+5. remove an old path when it is truly replaced;
+6. run applicable verification;
+7. reread the final diff;
+8. remove newly introduced bloat before finalizing.
+
+Before submission, no feature work is authorized unless a new evidenced P0 issue is found. Documentation corrections, submission synchronization and factual security disclosures are allowed when they align existing behavior.
