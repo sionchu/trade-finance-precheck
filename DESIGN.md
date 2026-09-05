@@ -6,7 +6,7 @@ Create a calm, trustworthy Treasury pre-check for Korean finance practitioners. 
 
 ## Design principles
 
-- Put the current decision and its financial evidence before detailed inputs.
+- Follow facts → assumptions → immediate deterministic change → option trade-off → short review → report.
 - Distinguish transaction-only funding from company-wide liquidity without recommendation language.
 - Show relationships visually instead of placing unrelated KPI cards side by side.
 - Use white space, typography, semantic status text, and one clear next action before decorative effects.
@@ -63,7 +63,7 @@ The experience uses progressive disclosure rather than forcing a manual into the
 - Financial terms are individual clickable disclosure items with one plain-language definition and one caution/boundary sentence.
 - The help content is one canonical Python presentation SSOT in `components/trade_treasury_experience/__init__.py`; do not create separate tooltip, popover, and manual copies that can drift.
 - Core information needed to make the next decision stays visible. Definitions and caveats may be progressively disclosed.
-- If conditions change, tell the user exactly what to do next: return to `거래 검토` and run the current conditions again.
+- If conditions change, tell the user exactly what to do next: return to `결과·보고서` and run the current conditions again.
 
 ## Interaction
 
@@ -96,7 +96,7 @@ The wrapper performs a bounded Korean copy-normalization pass over the committed
 
 ## Guided decision loop
 
-The five-stage experience follows condition → company cash → funding/FX choice → review → result. `review_goal` records user intent and `response_action` records the next comparison the user chose; neither is an AI recommendation or financial input. Tool completion is shown only from a completed Agent run, never from timers or simulated progress.
+The five stages are 거래 입력 → 판단 기준 → 회사 자금 → 대응 시뮬레이션 → 결과·보고서. Internal stage IDs remain compatible; `review` now means judgment assumptions. The prominent review-goal selector is removed and Agent review defaults to overall. Facts use exact inputs; assumptions use synchronized sliders and exact inputs sharing one authoritative key. Stage-local controls persist across navigation. Company cash uses the existing timeline as a native step chart. Alternatives show current → option → delta, including unchanged bank principal. Deterministic results lead; the single optional Agent action and report live together in the final stage. Tool completion is shown only after actual success.
 
 ## Final product freeze
 

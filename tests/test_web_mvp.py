@@ -1,13 +1,17 @@
 import os
+import json
 from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from streamlit.testing.v1 import AppTest
+from streamlit.testing.v1 import element_tree
+from streamlit.proto.WidgetStates_pb2 import WidgetState
 
 from src.ai.deal_review import (
     DealReviewError,
@@ -230,6 +234,20 @@ def review_result(payment_context=None, treasury_context=None):
 
 
 class WebMvpTests(unittest.TestCase):
+    def setUp(self):
+        # AppTest has no Components v2 Widget implementation. Send its actual
+        # persisted state on reruns, as the browser does, instead of dropping it.
+        original = element_tree.get_widget_state
+
+        def widget_state(node):
+            if getattr(node, "type", None) == "bidi_component":
+                return WidgetState(id=node.proto.id, json_value=json.dumps(dict(node.value)))
+            return original(node)
+
+        patcher = patch.object(element_tree, "get_widget_state", side_effect=widget_state)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def render_without_credentials(self, input_values=None):
         with (
             patch.dict(
@@ -252,6 +270,7 @@ class WebMvpTests(unittest.TestCase):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
             for label, value in (input_values or {}).items():
+                switch_stage(app, "liquidity" if label in ("운전자금 한도 총액", "현재 사용액") else "review")
                 next(
                     item for item in app.number_input if item.label == label
                 ).set_value(value)
@@ -272,6 +291,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
             element_by_key(app.button, "analyze_demo_documents").click()
             app.run()
             self.assertEqual(app.exception, [])
@@ -305,6 +325,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_default_reference_deal_renders_without_exception(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "review")
         labels = {metric.label: metric.value for metric in app.metric}
         self.assertEqual(app.metric[0].label, "실제로 남는 마진")
         self.assertEqual(app.metric[0].value, "14.64%")
@@ -314,6 +335,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_canonical_usd_stress_is_below_fourteen_percent_target(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "review")
         message = next(
             item.value for item in app.error if "달러 -5% Stress" in item.value
         )
@@ -334,15 +356,14 @@ class WebMvpTests(unittest.TestCase):
 
     def test_decision_first_information_hierarchy(self):
         app, _, _, _ = self.render_without_credentials()
-        headings = [item.value for item in app.subheader]
-        expected_order = [
-            "이 거래, 현재 조건에서 버틸까요?",
-            "거래서류로 자동 입력하기",
-            "조건이 나빠지면 어떻게 될까요?",
-            "이 거래를 목표 수준으로 만들려면?",
-        ]
-        positions = [headings.index(label) for label in expected_order]
-        self.assertEqual(positions, sorted(positions))
+        self.assertEqual(element_by_key(app.radio, "deal_input_mode").options,
+                         ["직접 입력", "거래서류 불러오기"])
+        self.assertTrue(any(item.key == "sale_amount_input" for item in app.number_input))
+        self.assertFalse(any(item.key == "target_margin_input" for item in app.number_input))
+        switch_stage(app, "review")
+        self.assertTrue(any(item.key == "target_margin_input" for item in app.number_input))
+        self.assertFalse(any(item.key == "sale_amount_input" for item in app.number_input))
+        self.assertIn("가정을 바꾸면 결과가 바로 달라집니다", [item.value for item in app.subheader])
 
     def test_company_cash_plan_timeline_is_visible_and_confirmed_only(self):
         app, _, _, _ = self.render_without_credentials()
@@ -383,6 +404,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_canonical_rescue_boundaries_are_visible(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "review")
         visible = "\n".join(
             item.value
             for item in (*app.markdown, *app.metric, *app.caption, *app.error)
@@ -414,6 +436,7 @@ class WebMvpTests(unittest.TestCase):
             "response_action": "none",
         }
         app.run()
+        switch_stage(app, "result")
         self.assertEqual(
             metric_by_label(app, "생성 기준").value,
             "현재 거래 입력 기반 분석",
@@ -449,11 +472,11 @@ class WebMvpTests(unittest.TestCase):
         switch_stage(app, "treasury")
         headings = [item.value for item in app.subheader]
         self.assertNotIn("회사 자금으로 대금 회수일까지 버틸 수 있을까요?", headings)
-        self.assertIn("부족한 돈은 어떻게 메울까요?", headings)
+        self.assertIn("매출채권 조기 현금화", headings)
         number_labels = [item.label for item in app.number_input]
         self.assertIn("운전자금 한도 총액", number_labels)
         self.assertIn("현재 사용액", number_labels)
-        self.assertEqual(number_labels.count("실제 연 조달금리 (%)"), 1)
+        self.assertEqual(number_labels.count("실제 연 조달금리 (%)"), 0)
         visible = "\n".join(
             item.value
             for item in (*app.markdown, *app.success, *app.error, *app.info, *app.caption)
@@ -509,12 +532,12 @@ class WebMvpTests(unittest.TestCase):
             "**Usance 수수료**  4.05만원",
             "**총 금융비용**  약 54.94만원",
             "일반 운전자금 한도 사용은 줄지만",
-            "Usance 자체 승인·한도는 본 시뮬레이션에서 판단하지 않습니다",
+            "승인·실행은 포함하지 않습니다",
             "환위험이 자동으로 없어지는 것은 아닙니다",
         ):
             self.assertIn(text, visible)
         self.assertGreaterEqual(visible.count("6,900만원"), 3)
-        self.assertIn("2,700만원", [item.value for item in app.metric])
+        self.assertIn("-2,700만원", [item.value for item in app.metric])
         self.assertIn("4.05만원", visible)
         self.last_statement_extract.assert_not_called()
         self.last_deal_review.assert_not_called()
@@ -594,6 +617,7 @@ class WebMvpTests(unittest.TestCase):
         )
         self.assertIn("재무제표상 현금 ≠ 이 거래에 투입 가능한 자금", visible)
         self.assertNotIn("이익잉여금", visible)
+        switch_stage(app, "review")
         self.assertEqual(
             next(
                 item
@@ -735,8 +759,10 @@ class WebMvpTests(unittest.TestCase):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
             trigger_component_review(app)
+            switch_stage(app, "review")
             next(item for item in app.number_input if item.label == "목표 마진 (%)").set_value(13.0)
             app.run()
+            switch_stage(app, "result")
         review.assert_called_once()
         visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
         self.assertIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
@@ -752,6 +778,7 @@ class WebMvpTests(unittest.TestCase):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
             trigger_component_review(app)
+            switch_stage(app, "review")
             target = next(
                 item for item in app.number_input if item.label == "목표 마진 (%)"
             )
@@ -762,6 +789,7 @@ class WebMvpTests(unittest.TestCase):
             )
             target.set_value(14.0)
             app.run()
+            switch_stage(app, "result")
         review.assert_called_once()
         visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
         self.assertNotIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
@@ -784,9 +812,11 @@ class WebMvpTests(unittest.TestCase):
                 ("usance_repayment_day_input", 91, 90),
             )
             for key, changed, original in changes:
+                switch_stage(app, "treasury")
                 widget = element_by_key(app.number_input, key)
                 widget.set_value(changed)
                 app.run()
+                switch_stage(app, "result")
                 stale = "\n".join(
                     item.value for item in (*app.markdown, *app.warning)
                 )
@@ -794,9 +824,11 @@ class WebMvpTests(unittest.TestCase):
                     "기존 AI 검토는 현재 상태와 일치하지 않습니다", stale
                 )
 
+                switch_stage(app, "treasury")
                 widget = element_by_key(app.number_input, key)
                 widget.set_value(original)
                 app.run()
+                switch_stage(app, "result")
                 current = "\n".join(
                     item.value for item in (*app.markdown, *app.warning)
                 )
@@ -908,14 +940,14 @@ class WebMvpTests(unittest.TestCase):
 
     def test_public_market_surface_is_ksure_only(self):
         app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "review")
+        switch_stage(app, "result")
         button_labels = [item.label for item in app.button]
         self.assertIn("K-SURE 결제정보 불러오기", button_labels)
         self.assertNotIn("공식 기준환율 불러오기", button_labels)
         self.assertNotIn("현재 거래에 적용", button_labels)
         self.assertEqual(
             [item.label for item in app.date_input],
-            ["거래 검토 기준일"],
+            [],
         )
 
     def test_collection_day_updates_receivable_comparison_label(self):
@@ -947,11 +979,14 @@ class WebMvpTests(unittest.TestCase):
 
     def test_missing_credentials_do_not_prevent_deterministic_analysis(self):
         app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "review")
         self.assertTrue(any("목표 충족" in message.value for message in app.success))
-        self.assertEqual(len(app.dataframe), 1)
+        self.assertGreaterEqual(len(app.dataframe), 1)
 
     def test_ai_section_safely_reports_missing_key(self):
         app, _, _, _ = self.render_without_credentials()
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
+            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
         self.assertTrue(
             any("OPENAI_API_KEY" in message.value for message in app.info)
         )
@@ -983,8 +1018,10 @@ class WebMvpTests(unittest.TestCase):
             sale_input = element_by_key(app.number_input, "sale_amount_input")
             sale_input.set_value(90000.0)
             app.run()
+            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
             element_by_key(app.button, "analyze_demo_documents").click()
             app.run()
+            element_by_key(app.radio, "deal_input_mode").set_value("직접 입력").run()
             self.assertEqual(
                 element_by_key(app.number_input, "sale_amount_input").value,
                 90000.0,
@@ -1023,6 +1060,7 @@ class WebMvpTests(unittest.TestCase):
             app = AppTest.from_file(app_path, default_timeout=10).run()
             element_by_key(app.number_input, "sale_amount_input").set_value(90000.0)
             app.run()
+            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
             element_by_key(app.button, "analyze_demo_documents").click()
             app.run()
             element_by_key(app.checkbox, "ai_hedge_confirmation").check()
@@ -1030,6 +1068,7 @@ class WebMvpTests(unittest.TestCase):
             element_by_key(app.button, "apply_ai_proposal").click()
             app.run()
 
+        element_by_key(app.radio, "deal_input_mode").set_value("직접 입력").run()
         self.assertEqual(
             element_by_key(app.number_input, "sale_amount_input").value,
             100000.0,
@@ -1046,6 +1085,7 @@ class WebMvpTests(unittest.TestCase):
             app.session_state["ai_applied_patch"],
             app.session_state["ai_proposed_patch"],
         )
+        switch_stage(app, "result")
         self.assertEqual(
             metric_by_label(app, "생성 기준").value,
             "거래서류 AI 추출값 일부 반영",
@@ -1062,6 +1102,7 @@ class WebMvpTests(unittest.TestCase):
         ):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
+            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
             element_by_key(app.button, "analyze_demo_documents").click()
             app.run()
             element_by_key(app.checkbox, "ai_hedge_confirmation").check()
@@ -1069,10 +1110,12 @@ class WebMvpTests(unittest.TestCase):
             element_by_key(app.button, "apply_ai_proposal").click()
             app.run()
             applied_snapshot = app.session_state["ai_applied_patch"]
+            element_by_key(app.radio, "deal_input_mode").set_value("직접 입력").run()
             element_by_key(app.number_input, "sale_amount_input").set_value(150000.0)
             app.run()
 
         self.assertEqual(app.session_state["ai_applied_patch"], applied_snapshot)
+        switch_stage(app, "result")
         self.assertEqual(
             metric_by_label(app, "생성 기준").value,
             "AI 추출값 반영 후 현재 거래에서 일부 값 수정",
@@ -1087,6 +1130,88 @@ class WebMvpTests(unittest.TestCase):
         ):
             app.run()
         rerun_extract.assert_not_called()
+
+    def test_scenario_slider_exact_and_stage_roundtrip_share_current_value(self):
+        app, _, _, _ = self.render_without_credentials()
+        with patch("src.ai.deal_review.run_deal_review") as review:
+            switch_stage(app, "review")
+            element_by_key(app.slider, "target_margin_input_slider").set_value(15.0).run()
+            self.assertEqual(element_by_key(app.number_input, "target_margin_input").value, 15.0)
+            self.assertEqual(metric_by_label(app, "목표 마진").value, "15.00%")
+            element_by_key(app.number_input, "usd_krw_input").set_value(1330.0).run()
+            self.assertEqual(metric_by_label(app, "실제로 남는 마진").value, "11.20%")
+            element_by_key(app.button, "usd_krw_input_기준").click().run()
+            self.assertEqual(metric_by_label(app, "실제로 남는 마진").value, "14.64%")
+            switch_stage(app, "liquidity")
+            switch_stage(app, "review")
+            self.assertEqual(element_by_key(app.number_input, "target_margin_input").value, 15.0)
+            self.assertEqual(element_by_key(app.number_input, "usd_krw_input").value, 1400.0)
+            self.assertEqual(len(app.sidebar.number_input), 0)
+        review.assert_not_called()
+
+    def test_company_credit_reacts_and_timeline_chart_uses_current_data(self):
+        app, _, _, _ = self.render_without_credentials()
+        switch_stage(app, "liquidity")
+        self.assertEqual(len(app.get("vega_lite_chart")), 1)
+        element_by_key(app.number_input, "credit_total_limit_input").set_value(110000000.0).run()
+        visible = "\n".join(item.value for item in (*app.error, *app.markdown))
+        self.assertIn("900만원", visible)
+        self.assertEqual(metric_by_label(app, "회사 기존 자금계획까지 포함한 필요 은행자금").value, "8,900만원")
+        switch_stage(app, "treasury")
+        self.assertEqual(element_by_key(app.number_input, "credit_total_limit_input").value, 110000000.0)
+
+    def test_option_comparisons_have_before_after_delta_and_react_without_ai(self):
+        app, _, _, _ = self.render_without_credentials()
+        with patch("src.ai.deal_review.run_deal_review") as review:
+            switch_stage(app, "treasury")
+            self.assertEqual([tab.label for tab in app.tabs], ["기존 운전자금", "매출채권 조기 현금화", "선물환 시뮬레이션", "Banker's Usance"])
+            self.assertGreaterEqual(sum(m.label == "변화" for m in app.metric), 7)
+            self.assertIn("0만원", [m.value for m in app.metric])
+            element_by_key(app.number_input, "receivable_purchase_day_input").set_value(70).run()
+            self.assertIn("D+70", [m.value for m in app.metric])
+            element_by_key(app.slider, "usd_hedge_ratio_input_slider").set_value(50.0).run()
+            visible = "\n".join(x.value for x in app.markdown)
+            self.assertIn("USD 40,000", visible)
+            self.assertNotIn("무엇을 먼저 확인할까요?", visible)
+        review.assert_not_called()
+
+    def test_uploaded_role_pdfs_delegate_once_and_are_removed_after_analysis(self):
+        captured = []
+
+        def extract(paths):
+            captured.extend(paths)
+            self.assertEqual([p.name for p in paths], ["Sales_Contract.pdf", "Supplier_PO_US.pdf", "Supplier_PO_JP.pdf"])
+            self.assertTrue(all(p.read_bytes() == b"%PDF-1.4 test" for p in paths))
+            return extracted_demo()
+
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+            patch("streamlit.file_uploader", return_value=SimpleNamespace(name="my-contract.pdf", getvalue=lambda: b"%PDF-1.4 test")),
+            patch("src.ai.financialization.analyze_demo_documents", side_effect=extract) as extraction,
+        ):
+            app = AppTest.from_file(Path(__file__).parents[1] / "app.py").run()
+            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
+            element_by_key(app.radio, "document_source").set_value("내 PDF 업로드").run()
+            extraction.assert_not_called()
+            element_by_key(app.button, "analyze_demo_documents").click().run()
+            self.assertEqual(app.exception, [])
+            self.assertIn("my-contract.pdf", "\n".join(x.value for x in app.caption))
+        extraction.assert_called_once()
+        self.assertTrue(captured)
+        self.assertTrue(all(not p.exists() for p in captured))
+
+    def test_upload_rejects_non_pdf_without_model_request(self):
+        with (
+            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}),
+            patch("streamlit.file_uploader", return_value=SimpleNamespace(name="bad.pdf", getvalue=lambda: b"not-pdf")),
+            patch("src.ai.financialization.analyze_demo_documents") as extraction,
+        ):
+            app = AppTest.from_file(Path(__file__).parents[1] / "app.py").run()
+            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
+            element_by_key(app.radio, "document_source").set_value("내 PDF 업로드").run()
+            element_by_key(app.button, "analyze_demo_documents").click().run()
+            self.assertTrue(app.warning)
+        extraction.assert_not_called()
 
 
 if __name__ == "__main__":

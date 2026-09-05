@@ -28,7 +28,7 @@ _JS_COPY_REPLACEMENTS = {
     ),
     "선택한 대응조건을 아래 결정론적 비교에서 확인합니다.": "선택한 조건을 아래 계산 결과와 비교해 보세요.",
     "조건이 변경되어 다시 검토가 필요합니다.": (
-        "조건이 바뀌었습니다. 상단의 거래 검토 단계에서 현재 조건으로 다시 확인해 주세요."
+        "조건이 바뀌었습니다. 아래 거래 검토를 현재 조건으로 다시 실행해 주세요."
     ),
     "거래 검토 결과를 준비하고 있습니다.": "검토 결과를 불러오고 있습니다.",
 }
@@ -48,10 +48,10 @@ _CSS = "/* bundled component */\n" + (_BUILD_DIR / "index.css").read_text(encodi
 
 
 STAGES = (
-    {"id": "deal", "label": "거래 조건"},
+    {"id": "deal", "label": "거래 입력"},
+    {"id": "review", "label": "판단 기준"},
     {"id": "liquidity", "label": "회사 자금"},
-    {"id": "treasury", "label": "자금·환위험"},
-    {"id": "review", "label": "거래 검토"},
+    {"id": "treasury", "label": "대응 시뮬레이션"},
     {"id": "result", "label": "결과·보고서"},
 )
 REVIEW_GOALS = (
@@ -72,31 +72,11 @@ VALID_REVIEW_GOALS = {goal["id"] for goal in REVIEW_GOALS}
 VALID_RESPONSE_ACTIONS = {"none", *(action["id"] for action in RESPONSE_ACTIONS)}
 
 STAGE_GUIDE = (
-    {
-        "title": "거래 조건",
-        "description": "받을 돈, 먼저 나갈 돈, 결제시점을 확인합니다.",
-        "next": "다음: 회사 자금 흐름을 함께 봅니다.",
-    },
-    {
-        "title": "회사 자금",
-        "description": "기존 회사 일정과 이번 거래를 같은 날짜 위에 겹쳐 봅니다.",
-        "next": "다음: 부족한 자금과 외화위험을 나눠 확인합니다.",
-    },
-    {
-        "title": "자금·환위험",
-        "description": "운전자금, 매출채권 현금화, 선물환, Usance를 현재 조건과 비교합니다.",
-        "next": "다음: 어떤 관점을 먼저 볼지 선택합니다.",
-    },
-    {
-        "title": "거래 검토",
-        "description": "현재 계산 결과만 읽는 거래 검토가 우선 확인할 항목을 정리합니다.",
-        "next": "조건이 바뀌었다면 여기에서 현재 조건으로 다시 검토합니다.",
-    },
-    {
-        "title": "결과·보고서",
-        "description": "현재 검토 결과와 근거를 확인하고 보고서로 저장합니다.",
-        "next": "필요하면 비교할 조건을 선택해 자금·환위험 단계로 돌아갑니다.",
-    },
+    {"title": "거래 입력", "description": "PDF 또는 직접 입력으로 거래 사실을 확인합니다.", "next": "다음: 판단 기준을 조절합니다."},
+    {"title": "판단 기준", "description": "목표·환율·금리·회수일을 바꾸면 결과가 즉시 달라집니다.", "next": "다음: 회사 자금계획을 합칩니다."},
+    {"title": "회사 자금", "description": "회사 기존 일정과 거래를 같은 Timeline에서 비교합니다.", "next": "다음: 부족분을 메울 조건을 비교합니다."},
+    {"title": "대응 시뮬레이션", "description": "운전자금·매출채권·선물환·Usance의 현재→대안→변화를 봅니다.", "next": "다음: 결과와 보고서를 확인합니다."},
+    {"title": "결과·보고서", "description": "계산 결과를 먼저 보고 선택적으로 짧은 거래 검토를 실행합니다.", "next": "보고서를 저장하거나 조건을 다시 조절합니다."},
 )
 
 HELP_TOPICS = (
@@ -378,11 +358,7 @@ def trade_treasury_experience(
     mount_args = {
         "key": key,
         "data": component_data,
-        "default": {
-            "active_stage": "deal",
-            "review_goal": "overall",
-            "response_action": "none",
-        },
+        "default": {"active_stage": "deal", "review_goal": "overall", "response_action": "none"},
         "on_active_stage_change": lambda: None,
         "on_review_goal_change": lambda: None,
         "on_response_action_change": lambda: None,

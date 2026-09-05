@@ -30,11 +30,11 @@ class ExperienceShellTests(unittest.TestCase):
         self.assertTrue(callable(trade_treasury_experience))
         self.assertEqual(
             [stage["id"] for stage in STAGES],
-            ["deal", "liquidity", "treasury", "review", "result"],
+            ["deal", "review", "liquidity", "treasury", "result"],
         )
         self.assertEqual(
             [stage["label"] for stage in STAGES],
-            ["거래 조건", "회사 자금", "자금·환위험", "거래 검토", "결과·보고서"],
+            ["거래 입력", "판단 기준", "회사 자금", "대응 시뮬레이션", "결과·보고서"],
         )
         self.assertEqual(
             [goal["id"] for goal in REVIEW_GOALS],
@@ -105,8 +105,8 @@ class ExperienceShellTests(unittest.TestCase):
             "이번 거래에 필요한 외부자금",
             "회사 전체 최대 자금부족",
             "현재 한도 반영 후 부족",
-            "거래 수익성",
-            "결제 참고정보",
+            "판단 기준 조절",
+            "이 조건으로 거래 검토",
         ):
             self.assertIn(expected, _JS)
 
@@ -114,10 +114,10 @@ class ExperienceShellTests(unittest.TestCase):
         source = (FRONTEND / "src" / "styles.css").read_text(encoding="utf-8")
         built = (FRONTEND / "build" / "index.css").read_text(encoding="utf-8")
         for css in (source, built):
-            self.assertIn(".snapshot-grid { display: none; }", css)
+            self.assertRegex(css, r"\.snapshot-grid\s*\{\s*display:\s*none;?\s*\}")
             self.assertIn(".help-center", css)
             self.assertIn(".help-topic", css)
-            self.assertIn(".insight div::before", css)
+            self.assertRegex(css, r"\.insight div:{1,2}before")
             self.assertIn("회사 전체 최대 자금부족", css)
 
     def test_frontend_has_no_finance_or_ai_dependency(self):

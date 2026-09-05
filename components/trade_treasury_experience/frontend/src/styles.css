@@ -115,6 +115,14 @@
    Each stage now surfaces only the numbers needed for the current decision. */
 .snapshot-grid { display: none; }
 
+.decision-snapshot { display: grid; gap: .65rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 1.25rem; }
+.decision-snapshot > div { display: grid; gap: .3rem; padding: .8rem; border-bottom: 1px solid var(--border); }
+.decision-snapshot span, .decision-snapshot small { color: var(--text-secondary); }
+.decision-snapshot strong { font-size: 1.4rem; color: var(--text-primary); }
+.stage-panel details { margin: .8rem 0; color: var(--text-secondary); }
+.stage-panel summary { cursor: pointer; min-height: 44px; }
+@media (max-width: 720px) { .decision-snapshot { grid-template-columns: 1fr; } }
+
 .stage-panel {
   margin: 0;
   padding: clamp(1.05rem, 2.2vw, 1.45rem);
