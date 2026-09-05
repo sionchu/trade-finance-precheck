@@ -1,1684 +1,500 @@
-수출거래 AI 금융진단 — Product Spec v0.1
+# 수출거래 AI 금융진단 — Product Specification
 
-Status: Canonical implementation and product specification
-Purpose: 2026 금융 AI Challenge MVP
-Scope rule: One export deal in company-liquidity and currency context. Deterministic finance first.
-Last updated: 2026-09-04
+Status: Canonical current-state product specification  
+Purpose: 2026 금융 AI Challenge MVP  
+Scope: One export deal in company-liquidity and currency context. Deterministic finance first.
 
-────────
+---
 
-Implementation State
+## 1. Product thesis
 
-FROZEN / IMPLEMENTED:
+수출거래 AI 금융진단은 수출계약 체결 전에 거래 수익성, 회사 전체 자금흐름, 외화노출을 함께 보고 대응 조건을 비교하는 B2B 금융 의사결정 지원 서비스다.
 
-• Financial Engine v0.1
-• Deal Rescue / Negotiation Solver
-• Deterministic End-to-End Web MVP
-• Accepted KRDS/Toss-inspired presentation layer
-• Trade Document Financialization
-• Financial Statement Financialization / Company Liquidity Profile
-• Company Liquidity & Funding Choice
-• FX Treasury / Forward Hedge Simulation
-• Banker's Usance
-• Single Deal Review Agent with Treasury context
-• T6-A Company Liquidity Timeline
-• T6-B React Experience Shell
-• T6-C Guided Decision / Agent UX Orchestration
-• T6-D Report / Submission / Final Product Freeze
-• K-SURE public aggregate payment context
-• Deal Pre-check Report
-• Public Streamlit deployment
+핵심 질문은 다음 두 가지다.
 
-VALIDATED / DEFERRED:
+> 이 거래가 돈을 필요로 하는 시점에 회사가 실제로 버틸 수 있는가?
 
-• Korea Eximbank reference-FX adapter — local live validation passed; public Streamlit runtime disabled due target-environment reliability
-• Bank of Korea ECOS funding benchmark / macro context
+> 부족한 자금과 외화위험을 어떤 금융조건으로 검토할 수 있는가?
 
-CURRENT GATE:
+이 제품은 금융상품 실행 플랫폼이 아니다. 대출 승인, 송금, 환율 예측, 헤지 주문, 보험·보증 실행, 바이어 부도 예측을 수행하지 않는다.
 
-• T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze
-• T6-D — IMPLEMENTED / FROZEN
-• Product state: FINAL SUBMISSION CANDIDATE
-• No feature work; only evidenced P0 correctness or deployment fixes before submission
+초기 사용자는 한국의 수출입 중소·중견 제조기업 재무·자금 담당자다. Corporate RM, Trade Finance, Transaction Banking, FX 담당자는 기업과 동일한 진단 근거를 공유하는 2차 활용자다.
 
-DEFERRED:
+---
 
-• RAG, multi-agent architecture and arbitrary web search
-• Hugging Face runtime
-• FX forecasting, CFaR Monte Carlo and stochastic risk models
-• Bank of Korea ECOS adapter
-• EUR/CNY engine expansion
-• Insurance and guarantee execution
-• Actual hedge and loan execution
-• Bank credit approval and buyer default prediction
-• Full L/C workflow, UPAS and D/A / D/P engine expansion
-• Database and authentication
+## 2. Public product contract
 
-────────
+Public product name:
 
-0. Canonical Scope and Model
+`수출거래 AI 금융진단`
 
-Canonical model principle:
+Subtitle:
 
-> A trade deal is not financially complete if the engine only calculates FX and an abstract funding-rate cost.
+`계약 전 수익성·회사 자금·환위험을 한 화면에서 비교합니다.`
 
-The product connects three decision layers:
-
-A. Deal Economics — existing and frozen
-
-• document financialization
-• margin and dated Deal cash flow
-• funding requirement and Stress
-• USD/KRW threshold and Deal Rescue
-• receivable early-purchase simulation
-
-B. Company Liquidity — authorized Treasury scope
-
-• Financial Statement AI
-• company liquidity profile
-• user-confirmed cash available to this Deal
-• existing bank credit line and unused limit
-• funding capacity and liquidity gap
-• deterministic funding-choice comparison
-
-C. FX Treasury — implemented and frozen
-
-• currency-level receivables and payables
-• natural offset and open net exposure
-• unfavorable FX direction
-• user-supplied forward quote
-• hedge ratio and residual exposure
-• deterministic hedged-scenario comparison
-
-The project is not a trade-finance platform.
-
-Financial Engine v0.1 includes:
-
-• Base Deal
-• External working-capital financing
-• O/A receivable held to maturity
-• O/A receivable early-purchase simulation
-• FX / rate / payment-delay stress
-
-Insurance and guarantee execution remain deferred. The frozen forward-hedge
-simulation does not predict or execute an FX transaction.
-
-────────
-
-1. Product Thesis
-
-Problem
-
-A Korean export-oriented SME or mid-sized manufacturer can sign a profitable-looking contract and still experience a poor financial outcome because the sales price is only one part of the deal.
-
-The company must finance production before collection and may simultaneously carry:
-
-• export FX exposure,
-• imported-material FX exposure,
-• delayed buyer payment,
-• working-capital borrowing,
-• receivable-discount / negotiation cost,
-• buyer credit risk,
-• hedge / insurance / guarantee decisions.
-
-These facts are often split across contracts, invoices, spreadsheets, ERP, banks and K-SURE.
-
-Canonical Question
-
-> **“이 거래가 돈을 필요로 하는 시점에 회사의 실제 가용 유동성이 버틸 수 있는가?”**
-
-English concept: **Company-aware Trade Treasury Pre-check**
-
-Target User
-
-Initial target:
-
-• Korean export/import SME or mid-sized manufacturer
-• CEO / CFO / finance team / overseas sales / trade operations
-• companies without a dedicated treasury-risk platform
-
-Position
-
-This is a pre-deal decision layer, not an execution layer.
-
-The MVP does not:
-
-• transfer money,
-• open an L/C,
-• purchase a bill in a real bank,
-• issue insurance,
-• approve a loan,
-• approve a guarantee,
-• predict FX,
-• predict rates,
-• predict buyer default.
-
-────────
-
-2. Canonical User Journey
+Public views are exactly:
 
 ```text
-PO / Contract / Invoice
+입력 | 분석 | 보고서
+```
+
+Default view is `분석`.
+
+### 입력
+
+- 거래조건 요약과 회사 자금정보를 먼저 보여준다.
+- 원시 숫자 입력은 사용자가 `정보 수정`을 열 때만 노출한다.
+- 직접 입력 또는 거래서류 AI 분석을 통해 현재 거래값을 반영할 수 있다.
+- 거래서류 업로드가 지원하는 역할은 Sales Contract, USD Supplier PO, JPY Supplier PO다.
+- 회사 자금계획은 직접 편집하거나 표준 ERP export CSV를 불러올 수 있다.
+- Financial Statement AI는 bundled fictional KRW statement를 사용자가 명시적으로 실행할 때만 읽는다.
+
+### 분석
+
+- 결정론적 현재 판단 문장이 가장 먼저 나온다.
+- `이번 거래 필요 외부자금 → 회사 전체 최대 자금부족 → 현재 한도 반영 후 남는 부족`을 하나의 관계로 보여준다.
+- Company Liquidity Timeline을 주요 근거 시각화로 제공한다.
+- preset scenario는 Base와 이미 계산된 deterministic Stress 결과를 선택해 비교한다.
+- `기본`, `USD -5%`, `JPY +10%`, `금리 +1%p`, `회수 +30일`, `복합 악화`, `직접 설정`을 제공한다.
+- preset scenario에는 별도 계산 버튼이 없다.
+- 직접 설정은 정확 입력 필드만 사용하며 slider를 사용하지 않는다.
+- 대응안은 기존 운전자금, 매출채권 조기 현금화, 선물환, Banker's Usance의 `현재 → 대안 → 변화`를 비교한다.
+
+### 보고서
+
+- 현재 결정론적 결과 요약을 먼저 보여준다.
+- Single Deal Review Agent는 선택적 후순위 기능이다.
+- current review만 PDF에 포함하며 stale review는 제외한다.
+- 현재 조건의 `수출거래 AI 금융진단 보고서`를 인메모리 PDF로 생성한다.
+
+---
+
+## 3. Authoritative architecture
+
+```text
+User / Demo / Uploaded PDFs / ERP CSV
+                  ↓
+                app.py
+        Streamlit application state
+                  ↓
+ ┌────────────────┼────────────────┐
+ ↓                ↓                ↓
+AI               Finance          External
+Extraction       Deterministic    Reference
+Explanation      Engine           Context
+ ↓                ↓                ↓
+ └──────────── current evidence ───┘
+                  ↓
+             Analysis UI
+                  ↓
+        Optional read-only Agent
+                  ↓
+              PDF Report
+```
+
+Authority rules:
+
+1. Python deterministic finance is the source of truth for every authoritative financial number.
+2. React owns three-view navigation only and performs no finance calculation.
+3. AI may extract supported facts or explain already-computed evidence; it never becomes the authoritative calculator.
+4. External APIs remain outside finance calculations. External failure must not break core deterministic analysis.
+5. User-entered or user-confirmed company facts remain authoritative where no reliable official source exists.
+
+---
+
+## 4. Canonical reference case
+
+Company:
+
+- Korean mid-sized machinery-component manufacturer
+- US OEM export
+- USD raw-material purchase
+- JPY precision-component purchase
+- no dedicated Treasury organization
+
+Export sale:
+
+| Field | Value |
+|---|---:|
+| Currency | USD |
+| Amount | 100,000 |
+| Payment method | O/A |
+| Collection | D+90 |
+
+Foreign payables:
+
+| Item | Currency | Amount | Payment |
+|---|---|---:|---:|
+| US raw material | USD | 20,000 | D+30 |
+| Japan component | JPY | 3,000,000 | D+30 |
+
+KRW costs:
+
+| Item | Amount | Payment |
+|---|---:|---:|
+| Domestic production advance | KRW 30,000,000 | D+0 |
+| Domestic production balance | KRW 25,000,000 | D+30 |
+| Logistics / customs | KRW 9,000,000 | D+60 |
+
+Financial assumptions:
+
+| Field | Value |
+|---|---:|
+| USD/KRW | 1,400 |
+| JPY/KRW | 900 KRW / 100 JPY |
+| Deal-allocated company cash | KRW 50,000,000 |
+| Annual funding rate | 4.8% |
+| Target financing-adjusted Deal Margin | 14.0% |
+
+Company liquidity context:
+
+| Field | Value |
+|---|---:|
+| Current usable company cash | KRW 120,000,000 |
+| Minimum operating cash | KRW 70,000,000 |
+| Working-capital total line | KRW 100,000,000 |
+| Used amount | KRW 30,000,000 |
+| Unused line | KRW 70,000,000 |
+
+Canonical company cash-plan events are defined in `app.py` and tests. Prospective Deal cashflow is overlaid from the finance engine and must not be duplicated in the company plan.
+
+---
+
+## 5. Canonical deterministic outputs
+
+Base:
+
+```text
+Export sales                           140.000M KRW
+Non-funding cost                       119.000M KRW
+Gross Deal Profit                       21.000M KRW
+Gross Deal Margin                       15.00%
+Maximum external borrowing              69.000M KRW
+External funding cost                    0.509M KRW
+Financing-adjusted Deal Profit          20.491M KRW
+Financing-adjusted Deal Margin          14.64%
+USD exposure                           +80,000 USD
+JPY exposure                        -3,000,000 JPY
+```
+
+Company-aware signature:
+
+```text
+이번 거래 필요 외부자금          69M KRW
+→ 회사 전체 최대 자금부족        89M KRW
+→ 현재 미사용 한도                70M KRW
+→ 현재 한도 반영 후 남는 부족     19M KRW
+Peak                         2026-11-03 / D+60
+```
+
+Canonical Stress:
+
+| Scenario | Margin | Max external borrowing | Funding cost | Collection |
+|---|---:|---:|---:|---:|
+| Base | 14.64% | 69.0M | 0.509M | D+90 |
+| USD -5% | 11.20% | 67.6M | 0.498M | D+90 |
+| JPY +10% | 12.69% | 71.7M | 0.530M | D+90 |
+| Funding +1%p | 14.56% | 69.0M | 0.615M | D+90 |
+| Buyer delay +30d | 14.44% | 69.0M | 0.781M | D+120 |
+| Combined | 8.83% | 70.3M | 0.962M | D+120 |
+
+Thresholds are deterministic boundaries, never forecasts.
+
+Reference USD/KRW thresholds are approximately:
+
+```text
+zero-profit threshold  ≈ 1,143
+14% target threshold   ≈ 1,386
+```
+
+---
+
+## 6. Finance boundaries
+
+### Deal Economics
+
+The frozen engine calculates:
+
+- dated Deal cashflow
+- gross Deal profit and margin
+- external borrowing schedule
+- funding interest
+- financing-adjusted Deal profit and margin
+- currency exposure
+- canonical Stress scenarios
+- target / break-even USD/KRW thresholds
+
+Supported core Deal payment methods are OA and TT.
+
+Supported currencies are KRW, USD and JPY.
+
+### Company Liquidity
+
+Company-wide liquidity uses:
+
+- user-selected review date
+- company-confirmed currently usable cash
+- minimum operating-cash buffer
+- existing confirmed company cash-plan events
+- optional EXPECTED events only when explicitly included
+- prospective Deal cashflow from the deterministic Deal engine
+
+`DealCase.available_cash_krw` is Deal-allocated company cash and remains distinct from company-wide current usable cash.
+
+Working-capital unused line is derived from total line minus used amount. It is not separately editable.
+
+Company liquidity gap is not bank approval, credit capacity prediction, default probability or a recommendation.
+
+### Receivable early purchase
+
+The feature models the economics of monetizing one O/A receivable before maturity.
+
+Canonical demo:
+
+```text
+buyer collection        D+90
+purchase day            D+65
+discount rate           5.2% annual
+fee rate                0.15%
+```
+
+It may improve timing while increasing explicit cost and does not necessarily reduce peak funding.
+
+### FX Treasury / Forward
+
+The engine:
+
+- separates USD and JPY exposure
+- distinguishes amount-level natural offset from timing alignment
+- uses only user-supplied forward quotes and settlement spots
+- calculates hedged notional, residual exposure and deterministic settlement effect
+
+It does not forecast FX, recommend a hedge ratio, execute a hedge or infer bank quotes.
+
+### Banker's Usance
+
+Banker's Usance is a narrow financing overlay on one selected foreign payable.
+
+It compares ordinary working-capital usage with separate Usance principal, rate and fee assumptions.
+
+A reduction in ordinary working-capital use does not mean total bank principal disappears.
+
+It is not a payment-method enum, a complete L/C / UPAS workflow, an approval prediction or an automatic FX hedge.
+
+---
+
+## 7. AI contract
+
+AI has exactly three product roles.
+
+### 7.1 Trade Document Financialization
+
+Supported public upload roles:
+
+- Sales Contract PDF
+- USD Supplier PO PDF
+- JPY Supplier PO PDF
+
+The model extracts document-supported facts only. Missing facts stay missing. It must not calculate margin, FX exposure, funding need or working-capital requirements.
+
+The extracted proposal is validated deterministically and must be user-reviewed before applying.
+
+### 7.2 Financial Statement Financialization
+
+The current MVP reads the bundled fictional KRW financial statement only after an explicit user action.
+
+It extracts nine source-grounded facts:
+
+- cash and cash equivalents
+- short-term financial instruments
+- accounts receivable
+- inventory
+- current assets
+- current liabilities
+- short-term borrowings
+- finance cost
+- operating cash flow
+
+It must not infer ratios, Deal-available cash, bank lending capacity, credit approval, credit score, default risk or future cash flow.
+
+### 7.3 Single Deal Review Agent
+
+The Agent is a bounded one-shot explanation layer.
+
+Exactly four local read-only tools:
+
+1. `read_current_deal_analysis`
+2. `read_stress_and_rescue`
+3. `read_treasury_context`
+4. `read_payment_context`
+
+A successful run uses exactly two model requests and no retry.
+
+The first request must call each tool exactly once. The second request produces a strict structured memo.
+
+The Agent:
+
+- performs no authoritative calculation
+- performs no external fetch
+- does not mutate the Deal
+- does not execute finance
+- does not retain conversation history
+- does not predict FX, rates, buyer default or bank approval
+- does not recommend or rank products
+
+Authoritative numeric evidence remains deterministic UI output. AI headline and summary contain no numeric characters.
+
+---
+
+## 8. External data contract
+
+### K-SURE
+
+Implemented optional public context.
+
+- user explicitly requests the fetch
+- context is country + industry aggregate payment information
+- aggregate context is not buyer-specific default probability or a credit score
+- it does not automatically change Deal collection terms
+- core deterministic analysis works without it
+
+### Korea Eximbank reference FX
+
+Adapter exists and passed local live validation.
+
+Public Streamlit runtime path remains disabled because reliability in that target environment was not proven.
+
+It must not be presented as a forecast or execution quote.
+
+### Bank of Korea ECOS
+
+Funding benchmark / macro concept was validated during product research but remains deferred. No public ECOS adapter is implemented.
+
+### OpenDART and other providers
+
+Not implemented in the current MVP.
+
+Official structured data may be considered in commercialization, but no future provider is part of the present product contract.
+
+---
+
+## 9. Security and privacy boundary
+
+The current public MVP is a competition demonstration, not an enterprise document vault.
+
+- bundled demonstration documents and ERP data are fictional
+- the repository has no persistent application database or authentication layer
+- when a user explicitly runs Trade Document AI or Financial Statement AI, the selected PDF content is sent to the configured OpenAI API for structured extraction
+- those OpenAI requests are issued with `store=False`
+- the deterministic finance engine does not require OpenAI or public-data keys
+- public-demo users should not upload real trade secrets, personal information or confidential corporate documents
+
+Commercial deployment would require an explicit enterprise security design including data-retention policy, tenant isolation, encryption, authorization, audit logging, secret management, provider governance and AI security testing.
+
+Do not claim zero leakage risk, complete deletion guarantees or enterprise-grade confidentiality for the public MVP.
+
+---
+
+## 10. Report contract
+
+The PDF report is generated in memory from current deterministic evidence.
+
+It may include:
+
+- current Deal inputs
+- Base and canonical Stress results
+- target / break-even thresholds
+- company liquidity timeline and current-line capacity
+- funding options
+- FX Treasury evidence
+- Banker's Usance comparison
+- current K-SURE context if loaded
+- current Agent memo and used tools only when freshness is current
+
+It must exclude stale AI prose.
+
+Public report title:
+
+`수출거래 AI 금융진단 보고서`
+
+The current target is at most three pages.
+
+---
+
+## 11. Deferred / commercialization scope
+
+Not implemented in the current MVP:
+
+- database and authentication
+- live ERP / accounting / TMS integration
+- real bank-account connectivity
+- OpenDART integration
+- BOK ECOS public integration
+- public Korea Eximbank FX retrieval
+- L/C, UPAS, D/A and D/P full workflows
+- insurance / guarantee execution
+- actual receivable purchase, hedge, loan or payment execution
+- bank approval prediction
+- buyer-default prediction
+- FX / interest-rate forecasting
+- stochastic CFaR / Monte Carlo models
+- RAG or arbitrary web search
+- multi-agent architecture
+- EUR / CNY engine expansion
+
+A commercialization path may progressively add governed official-data and enterprise-system integrations while preserving the same authority rule:
+
+```text
+structured / official data when available
         ↓
-DealCase review
+deterministic finance
         ↓
-Base deal economics
+AI extraction / explanation as bounded assistance
         ↓
-Liquidity / external financing need
-        ↓
-Stress scenarios
-        ↓
-Wait for receivable
-        vs
-Early receivable purchase
-        ↓
-Financial explanation
+human / financial-institution final decision and execution
 ```
 
-Company-aware Treasury path:
+---
 
-```text
-Financial Statement
-        ↓
-Company Liquidity Profile
-        ↓
-Liquidity gap / funding-choice comparison
-        ↓
-Currency-level natural offset and open exposure
-        ↓
-Forward-hedge scenario using a user-supplied quote
-```
-
-All financial outputs remain deterministic pre-check simulations, not execution
-or approval workflows.
-
-────────
-
-3. Reference DealCase
-
-Every first implementation and test uses this one case.
-
-3.1 Company Context
-
-• Korean mid-sized machinery-component manufacturer
-• exports to a US OEM
-• imports some USD raw material
-• imports a Japanese precision component
-• no dedicated treasury organization
-• KRW 50,000,000 of internal liquidity can be allocated to this deal
-
-3.2 Export Sale
-
-|Field         |Value      |
-|--------------|----------:|
-|Buyer country |US         |
-|Currency      |USD        |
-|Amount        |USD 100,000|
-|Payment method|O/A        |
-|Collection    |D+90       |
-
-3.3 Foreign Inputs
-
-|Item                     |Currency|Amount   |Payment|
-|-------------------------|--------|--------:|------:|
-|US raw material          |USD     |20,000   |D+30   |
-|Japan precision component|JPY     |3,000,000|D+30   |
-
-3.4 KRW Costs
-
-|Item                          |Amount        |Payment|
-|------------------------------|-------------:|------:|
-|Domestic production advance   |KRW 30,000,000|D+0    |
-|Domestic production balance   |KRW 25,000,000|D+30   |
-|Logistics / customs / handling|KRW 9,000,000 |D+60   |
-
-3.5 Financial Assumptions
-
-|Field                                |Value            |
-|-------------------------------------|----------------:|
-|USD/KRW                              |1,400            |
-|JPY/KRW                              |900 KRW / 100 JPY|
-|Available company cash for deal      |KRW 50,000,000   |
-|External funding rate                |4.8% annual      |
-|Target financing-adjusted deal margin|14.0%            |
-
-Reference FX values are demo baselines, not forecasts.
-
-────────
-
-4. Reference Lifecycle
-
-```text
-D+0
-Sales Contract / PO
-Domestic production advance
--30M KRW
-
-D+30
-Domestic production balance
-USD raw material
-JPY component
-
-D+60
-Logistics / customs / handling
-
-D+90
-Buyer pays O/A receivable
-+USD 100,000
-```
-
-At the reference FX rates:
-
-```text
-D+0      -30.0M KRW
-
-D+30
--25.0M KRW domestic
--28.0M KRW USD input
--27.0M KRW JPY input
-= -80.0M
-
-D+60      -9.0M
-
-D+90    +140.0M
-```
-
-Cumulative deal cash before financing:
-
-```text
-D+0      -30.0M
-D+30    -110.0M
-D+60    -119.0M   ← peak deal funding requirement
-D+90     +21.0M
-```
-
-────────
-
-5. Core Domain Model
-
-5.1 DealCase
-
-```text
-DealCase
-├── sales
-│   ├── currency
-│   ├── amount
-│   ├── payment_method
-│   └── collection_day
-│
-├── foreign_payables[]
-│   ├── currency
-│   ├── amount
-│   └── payment_day
-│
-├── krw_costs[]
-│   ├── amount_krw
-│   └── payment_day
-│
-├── liquidity
-│   └── available_cash_krw
-│
-├── funding
-│   └── annual_rate
-│
-└── target_margin
-```
-
-5.2 Required Payment Methods
-
-First engine:
-
-• OA
-• TT
-
-Do not implement:
-
-• L/C
-• D/A
-• D/P
-
-until a later product-spec revision.
-
-5.3 Required Currencies
-
-• KRW
-• USD
-• JPY
-
-No EUR/CNY in v0.1.
-
-────────
-
-6. Deal Economics
-
-6.1 Currency Conversion
-
-```text
-KRW value = foreign amount × settlement FX
-```
-
-JPY:
-
-```text
-KRW value
-= JPY amount × (KRW per 100 JPY / 100)
-```
-
-6.2 Gross Deal Profit
-
-```text
-Gross Deal Profit
-= Export Sales KRW
-- Foreign Input Costs KRW
-- Domestic KRW Costs
-```
-
-Reference:
-
-```text
-Sales
-100,000 USD × 1,400
-= 140.0M KRW
-
-USD input
-20,000 × 1,400
-= 28.0M
-
-JPY input
-3,000,000 × 900 / 100
-= 27.0M
-
-Domestic production
-= 55.0M
-
-Logistics
-= 9.0M
-
-Total cost
-= 119.0M
-
-Gross Deal Profit
-= 21.0M
-
-Gross Deal Margin
-= 15.00%
-```
-
-6.3 Currency Exposure
-
-```text
-Net Exposure(currency)
-= receivables - payables
-```
-
-Reference:
-
-```text
-USD
-+100,000 - 20,000
-= +80,000 USD
-
-JPY
-0 - 3,000,000
-= -3,000,000 JPY
-```
-
-Interpretation:
-
-• positive USD exposure: falling USD/KRW hurts the deal
-• negative JPY exposure: rising JPY/KRW hurts the deal
-
-────────
-
-7. Liquidity and Working-Capital Financing
-
-7.1 Peak Deal Funding Requirement
-
-Construct dated deal cashflows before financing.
-
-```text
-Peak Deal Funding Requirement
-= maximum absolute negative cumulative deal cash
-```
-
-Reference:
-
-```text
-119.0M KRW
-```
-
-This is a deal-level liquidity requirement, not company-wide working capital.
-
-7.2 Available Company Cash
-
-The company may allocate internal cash to the deal.
-
-Reference:
-
-```text
-Available cash
-= 50.0M KRW
-```
-
-This internal cash does not generate an explicit interest expense in v0.1.
-
-Do not invent an opportunity-cost rate yet.
-
-7.3 External Borrowing Need
-
-Borrow only when cumulative deal cash demand exceeds allocated internal cash.
-
-At any point:
-
-```text
-External Loan Outstanding
-= max(
-    0,
-    absolute negative cumulative deal cash
-    - available company cash
-  )
-```
-
-Reference:
-
-```text
-D+0
-cash need = 30M
-available cash = 50M
-loan = 0
-
-D+30
-cumulative need = 110M
-loan = 60M
-
-D+60
-cumulative need = 119M
-loan = 69M
-
-D+90
-buyer collection received
-loan repaid
-```
-
-Therefore:
-
-```text
-Maximum External Borrowing
-= 69.0M KRW
-```
-
-7.4 External Funding Cost
-
-For each time interval:
-
-```text
-Funding Cost
-+= outstanding external loan
- × annual funding rate
- × interval days / 365
-```
-
-Reference:
-
-```text
-D+30 → D+60
-60M × 4.8% × 30/365
-
-D+60 → D+90
-69M × 4.8% × 30/365
-
-Total
-≈ 0.509M KRW
-```
-
-7.5 Financing-adjusted Deal Profit
-
-```text
-Financing-adjusted Deal Profit
-= Gross Deal Profit
-- External Funding Cost
-```
-
-Reference:
-
-```text
-21.0M - 0.509M
-≈ 20.491M KRW
-```
-
-7.6 Financing-adjusted Deal Margin
-
-```text
-Financing-adjusted Deal Margin
-= Financing-adjusted Deal Profit
-/ Export Sales KRW
-```
-
-Reference:
-
-```text
-≈ 14.64%
-```
-
-UI terminology:
-
-• Deal Margin
-• Financing-adjusted Deal Margin
-
-Do not label it statutory accounting Operating Margin.
-
-────────
-
-8. Stress Engine v0.1
-
-Exactly five stress cases.
-
-8.1 Base
-
-Expected:
-
-```text
-Gross Deal Margin                 15.00%
-Peak Deal Funding                119.0M
-Maximum External Borrowing        69.0M
-External Funding Cost             0.509M
-Financing-adjusted Deal Margin    14.64%
-```
-
-8.2 Scenario A — USD/KRW -5%
-
-```text
-1,400 → 1,330
-```
-
-Apply to unsettled USD sale and USD payable.
-
-Expected:
-
-```text
-Sales                             133.0M
-Total non-funding cost            117.6M
-Gross Deal Profit                  15.4M
-Maximum External Borrowing         67.6M
-Funding Cost                        0.498M
-Financing-adjusted Deal Margin     11.20%
-```
-
-8.3 Scenario B — JPY/KRW +10%
-
-```text
-900 → 990 KRW / 100 JPY
-```
-
-Expected:
-
-```text
-Total non-funding cost            121.7M
-Gross Deal Profit                  18.3M
-Maximum External Borrowing         71.7M
-Funding Cost                        0.530M
-Financing-adjusted Deal Margin     12.69%
-```
-
-8.4 Scenario C — Funding Rate +1.0%p
-
-```text
-4.8% → 5.8%
-```
-
-Expected:
-
-```text
-Funding Cost                        0.615M
-Financing-adjusted Deal Margin     14.56%
-```
-
-8.5 Scenario D — Buyer Payment Delay +30 days
-
-```text
-D+90 → D+120
-```
-
-Expected:
-
-```text
-Maximum External Borrowing         69.0M
-Funding Cost                        0.781M
-Financing-adjusted Deal Margin     14.44%
-```
-
-8.6 Scenario E — Combined Stress
-
-```text
-USD/KRW        -5%
-JPY/KRW       +10%
-Funding rate   +1.0%p
-Buyer delay   +30 days
-```
-
-Expected:
-
-```text
-Sales                             133.0M
-Total non-funding cost            120.3M
-Gross Deal Profit                  12.7M
-Maximum External Borrowing         70.3M
-Funding Cost                        0.962M
-Financing-adjusted Deal Profit     11.738M
-Financing-adjusted Deal Margin      8.83%
-```
-
-This is the canonical demo stress case.
-
-────────
-
-9. Receivable / Bill Purchase Simulation
-
-This is the first explicit Trade Finance option.
-
-9.1 Scope
-
-The first engine does not implement the legal/documentary lifecycle of:
-
-• a bill of exchange,
-• D/A,
-• D/P,
-• L/C negotiation.
-
-It models one economic decision:
-
-> Hold an O/A export receivable to buyer maturity  
-> **vs**  
-> monetize the receivable early through a bank-style purchase/discount assumption.
-
-Name the product feature:
-
-```text
-EARLY_RECEIVABLE_PURCHASE
-```
-
-Do not claim the user is actually eligible for bank purchase.
-
-9.2 Parameters
-
-```text
-ReceivablePurchaseOption
-├── purchase_day
-├── annual_discount_rate
-└── fee_rate
-```
-
-Canonical demo parameters:
-
-|Field                    |Value           |
-|-------------------------|---------------:|
-|Purchase day             |D+65            |
-|Annual discount rate     |5.2%            |
-|Fee rate                 |0.15%           |
-
-These are demo assumptions unless later replaced by official/bank data.
-
-The receivable KRW face value uses the active scenario USD/KRW from the Deal
-evaluation. No separate option-level settlement FX exists.
-
-The evaluation resolves one effective collection day from the DealCase or the
-active payment-delay scenario. That same day controls buyer cash collection on
-the hold path and remaining tenor on the early-purchase path.
-
-9.3 Discount Cost
-
-```text
-Remaining Tenor
-= effective collection day - purchase day
-```
-
-```text
-Discount Cost
-= receivable KRW face value
-× annual discount rate
-× remaining tenor / 365
-```
-
-9.4 Purchase Fee
-
-```text
-Purchase Fee
-= receivable KRW face value × fee rate
-```
-
-9.5 Net Purchase Proceeds
-
-```text
-Net Purchase Proceeds
-= receivable KRW face value
-- discount cost
-- purchase fee
-```
-
-9.6 Loan Interaction
-
-When early-purchase proceeds arrive:
-
-1. repay outstanding external deal borrowing first;
-2. remaining proceeds increase deal cash;
-3. external financing interest stops on the repaid amount.
-
-This interaction is essential.
-
-Do not calculate:
-
-```text
-normal full-period loan cost
-+
-full receivable-purchase cost
-```
-
-independently.
-
-The cashflow engine must recompute financing after the early collection event.
-
-────────
-
-10. Reference Financing Comparison
-
-10.1 Wait for Buyer
-
-Reference Base Deal:
-
-```text
-Collection
-D+90
-
-Maximum External Borrowing
-69.0M KRW
-
-External Funding Cost
-≈0.509M KRW
-
-Financing-adjusted Deal Margin
-≈14.64%
-```
-
-10.2 Early Receivable Purchase
-
-Reference assumptions:
-
-```text
-Purchase at D+65
-Discount rate 5.2%
-Fee 0.15%
-```
-
-Approximate reference:
-
-```text
-Loan interest before D+65
-≈0.282M
-
-Receivable discount
-≈0.499M
-
-Purchase fee
-≈0.210M
-
-Total explicit financing / monetization cost
-≈0.991M
-```
+## 12. Verification contract
 
-Interpretation:
+Local deterministic analysis must work without `OPENAI_API_KEY`, `KSURE_SERVICE_KEY` or Eximbank credentials.
 
-• early purchase improves liquidity,
-• external borrowing is repaid sooner,
-• but explicit transaction cost can be higher than simply waiting.
+Canonical verification commands:
 
-This trade-off is the product value.
-
-Do not force the product to label one option universally “better.”
-
-────────
-
-11. Delay + Early Purchase
-
-If the buyer contractual/expected collection moves to D+120 while purchase remains available at D+65:
-
-```text
-remaining tenor
-= 55 days
-```
-
-The engine must recalculate:
-
-• higher discount cost,
-• shorter external-loan duration,
-• liquidity benefit,
-• financing-adjusted margin.
-
-This lets the product answer:
-
-> “When buyer payment is delayed, is the liquidity benefit of early receivable monetization worth its extra cost?”
-
-────────
-
-12. Threshold Metrics
-
-12.1 Zero-profit USD/KRW Threshold
-
-Solve numerically where:
-
-```text
-Financing-adjusted Deal Profit = 0
-```
-
-Reference approximate result:
-
-```text
-USD/KRW ≈ 1,143
-```
-
-12.2 14% Target-margin USD/KRW Threshold
-
-Solve numerically where:
-
-```text
-Financing-adjusted Deal Margin = 14%
-```
-
-Reference approximate result:
-
-```text
-USD/KRW ≈ 1,386
-```
-
-Use bounded bisection / numerical solving over the full deterministic engine.
-
-Do not hard-code a simplified analytic result.
-
-UI wording:
-
-> “With the current deal and financing structure, maintaining a 14% financing-adjusted Deal Margin requires approximately USD/KRW 1,386 or above.”
-
-Never present this as an FX forecast.
-
-────────
-
-13. Insurance and Guarantee Model — Deferred Scope
-
-These concepts belong to the product model, but are not authorized in the current gate.
-
-13.1 Export Credit Insurance
-
-Economic role:
-
-```text
-Buyer non-payment risk
-        ↓
-risk transfer
-        ↓
-premium / insured coverage
-```
-
-Later simulation parameters may include:
-
-```text
-coverage_ratio
-premium
-insured_loss_assumption
-```
-
-Rules:
-
-• no invented buyer default probability,
-• no claim that insurance eligibility has been approved,
-• no fabricated official premium.
-
-13.2 Export Credit Guarantee
-
-Economic role:
-
-```text
-Export receivable / trade activity
-        +
-K-SURE-style credit enhancement
-        ↓
-financial institution
-        ↓
-financing availability
-```
-
-The guarantee is not the same as insurance.
-
-Potential later effects:
-
-• borrowing availability,
-• borrowing limit,
-• financing cost assumption.
-
-Do not simulate until the input assumptions can be sourced or user-entered.
-
-13.3 FX Insurance / Hedge
-
-Economic role:
-
-```text
-FX downside
-        ↓
-reduced FX variability
-        +
-coverage cost
-```
-
-Later parameters:
-
-```text
-covered_amount
-hedged_fx_rate
-coverage_cost
-```
-
-Rules:
-
-• no FX forecast,
-• no automatic hedge recommendation,
-• before/after simulation only.
-
-────────
-
-14. Deal-level Financial Options
-
-The frozen Deal-level option taxonomy is:
-
-```text
-FinancialOption
-├── HOLD_RECEIVABLE
-├── WORKING_CAPITAL_FINANCING
-├── EARLY_RECEIVABLE_PURCHASE
-├── EXPORT_CREDIT_INSURANCE        # deferred
-├── EXPORT_CREDIT_GUARANTEE        # deferred
-└── FX_COVER                       # superseded by the T3 Treasury boundary
-```
-
-Do not create:
-
-```text
-LoanAgent
-BillAgent
-InsuranceAgent
-GuaranteeAgent
-HedgeAgent
-```
-
-Each implemented option modifies deterministic cashflow or risk assumptions,
-not a new agent architecture. T2 through T4 introduce explicit Treasury
-simulation inputs and do not extend this enum speculatively.
-
-────────
-
-15. External Data
-
-P0
-
-Korea Eximbank FX
-
-Validated / deployment-deferred technical asset:
-
-• `deal_bas_r` as the official neutral USD/KRW reference FX
-• `deal_bas_r` as the official neutral JPY/KRW-per-100 reference FX
-
-The Financial Engine retains one rate per currency. TTB/TTS are not implemented
-application behavior, and reference FX is not an achieved customer settlement rate.
-The adapter passed local live validation. Its public Streamlit runtime path is
-disabled because retrieval is unreliable in that target environment.
-
-K-SURE Export Payment Information
-
-Use for country/industry context such as:
-
-• payment terms,
-• average payment period,
-• late-payment rate,
-• average late-payment period,
-• payment-period distribution.
-
-Do not manufacture an AI risk score.
-K-SURE aggregate context is not individual buyer risk prediction.
-
-Bank of Korea ECOS
-
-Validated / deferred series:
-
-• `121Y006` / `BECBLA02` — 예금은행 대출금리(신규취급액 기준), 기업대출, monthly, annualized percent → `FUNDING_BENCHMARK`
-• `722Y001` / `0101000` — 한국은행 기준금리, monthly → `MACRO_CONTEXT`
-
-Neither series overwrites `DealCase.annual_funding_rate`. The company/user-entered
-actual borrowing rate remains authoritative. No BOK ECOS adapter is implemented.
-
-P1 Deferred
-
-• K-SURE Country Risk context (not validated or implemented)
-• bank-specific receivable purchase rates
-• actual trade-finance fee schedules
-• product-specific insurance premium calculations
-• Customs export/import trend
-• buyer-specific corporate financials
-• logistics tracking
-• buyer-specific credit
-• cargo insurance
-• sanctions screening
-• maps
-• news
-
-────────
-
-16. AI Responsibility
-
-The product has exactly three AI roles.
-
-16.1 Trade Document Financialization
-
-Input:
-
-• PO
-• Sales Contract
-• Commercial Invoice
-
-Output:
-
-• proposed DealCase
-
-The user reviews extracted values before calculation. This role is implemented
-and frozen.
-
-16.2 Financial Statement Financialization
-
-Input:
-
-• company financial statement
-
-Output:
-
-• proposed company-liquidity facts supported explicitly by the statement
-
-Authorized extraction fields:
-
-• cash and cash equivalents
-• short-term financial instruments or deposits, when explicitly present
-• accounts receivable
-• inventory
-• current assets
-• current liabilities
-• short-term borrowings
-• interest expense or finance cost, when explicitly present
-• operating cash flow
-
-Retained earnings is not company available cash. AI must not transform retained
-earnings into liquidity. AI must not infer credit approval, bank lending
-capacity, Deal-specific available cash, a credit score, default, or future cash
-flow.
-
-The final value for “이번 거래에 실제 투입 가능한 회사자금” remains an
-explicit user-confirmed Deal input. This role is implemented and frozen.
-
-16.3 Single Deal Review Agent
-
-Explain:
-
-• Base vs Stress
-• which FX exposure mattered
-• why external borrowing increased
-• why payment delay increased funding cost
-• liquidity/cost tradeoff of receivable purchase
-
-The Single Deal Review Agent consumes only current Deal state, already-computed
-Financial Engine, Deal Rescue, Company Liquidity, Funding Choice, FX Treasury
-and Banker's Usance outputs, plus optional already-loaded K-SURE aggregate
-context. It produces a concise grounded review memo through exactly four local
-read-only evidence tools: current Deal analysis, Stress / Rescue, Treasury
-context, and K-SURE context. The Treasury tool only serializes supplied T1–T4
-results; it performs no calculation or external fetch.
-
-A successful run uses exactly two model requests and no retry. The Agent never fetches
-external data, calculates authoritative financial values, mutates the Deal,
-executes finance, or stores conversation history. Its immutable current-state
-snapshot includes Treasury context, so a Treasury input or result change makes
-an older memo stale and restoring the exact state makes it current again.
-This role and its Treasury integration are implemented and frozen.
-The structured memo requires exactly one currently available `treasury_focus`
-from credit-line capacity, funding options, FX exposure, forward hedge, or
-Banker's Usance. This is a review topic, not a recommendation.
-`supporting_signals` contains one to three always-available Deal-analysis signals
-and cannot select Treasury, Company Liquidity, or K-SURE values. Optional Company
-Liquidity and K-SURE context are rendered deterministically when loaded rather
-than exposed as runtime-dependent structured-output choices. Authoritative
-numbers remain deterministic.
-
-AI-generated prose does not restate authoritative numeric values. The Web MVP
-renders selected signals and negotiation topics from current deterministic
-state. K-SURE context remains country-and-industry aggregate context, not an
-individual buyer prediction or credit score.
-
-AI must distinguish:
-
-```text
-Observed official data
-User-entered fact
-Demo assumption
-Stress assumption
-Calculated result
-```
-
-AI must not alter deterministic numbers.
-
-────────
-
-17. MVP Screen
-
-Base Result
-
-```text
-Financing-adjusted Deal Margin
-14.64%
-
-Peak Deal Funding
-119.0M KRW
-
-Max External Borrowing
-69.0M KRW
-```
-
-Exposure:
-
-```text
-USD   +80,000
-JPY   -3,000,000
-```
-
-Stress
-
-|Scenario  |Margin   |Max Loan |Funding Cost|Collection|
-|----------|--------:|--------:|-----------:|---------:|
-|Base      |14.64%   |69.0M    |0.509M      |D+90      |
-|USD -5%   |11.20%   |67.6M    |0.498M      |D+90      |
-|JPY +10%  |12.69%   |71.7M    |0.530M      |D+90      |
-|Rate +1%p |14.56%   |69.0M    |0.615M      |D+90      |
-|Delay +30d|14.44%   |69.0M    |0.781M      |D+120     |
-|Combined  |**8.83%**|**70.3M**|**0.962M**  |**D+120** |
-
-Finance Decision
-
-```text
-Wait until D+90
-        vs
-Early receivable purchase at D+65
-```
-
-Show:
-
-• cash-availability date,
-• max external borrowing,
-• borrowing-interest cost,
-• receivable-purchase cost,
-• financing-adjusted margin.
-
-No universal “best” badge in v0.1.
-
-────────
-
-18. Non-goals
-
-Unless this spec is explicitly revised, do not implement:
-
-• L/C workflow
-• D/A workflow
-• D/P workflow
-• actual bill-of-exchange document generation
-• real bank receivable purchase
-• real bank loan
-• real insurance signup
-• real guarantee application
-• factoring platform
-• forfaiting workflow
-• live ERP replacement or vendor-specific direct integration
-• user authentication
-• portfolio database
-• multiple companies
-• multi-agent
-• LangGraph
-• vector DB
-• RAG framework
-• custom financial LLM
-• FX prediction
-• CFaR Monte Carlo
-• stochastic risk model
-• rate prediction
-• buyer-default ML
-• generic API Provider Factory
-• microservices
-• Kubernetes
-• map
-• news sentiment
-
-────────
-
-19. Validation
-
-Required Deterministic Tests
-
-1. Base deal economics
-2. Base external-financing schedule
-3. USD -5%
-4. JPY +10%
-5. funding rate +1%p
-6. payment delay +30d
-7. combined stress
-8. zero-profit USD threshold
-9. 14% target-margin USD threshold
-10. receivable held to maturity
-11. early receivable purchase
-12. early purchase repays external borrowing at purchase date
-13. buyer delay changes receivable discount tenor
-
-Invariants
-
-• lower USD/KRW cannot improve a positive USD-net-exposure deal
-• higher JPY/KRW cannot improve a negative JPY-exposure deal
-• higher borrowing rate cannot reduce borrowing cost
-• later buyer collection cannot reduce hold-to-maturity borrowing cost
-• larger available cash cannot increase maximum external borrowing
-• early purchase cannot leave the same borrowing outstanding after purchase proceeds have repaid it
-• higher discount rate cannot reduce receivable-purchase cost
-• AI output cannot mutate financial-engine values
-
-────────
-
-20. Frozen Gate — Financial Engine v0.1
-
-The completed Financial Engine v0.1 gate satisfies:
-
-• DealCase is cleanly represented
-• internal cash and external borrowing are separate concepts
-• base borrowing schedule matches the reference case
-• all five stress scenarios match expected values
-• threshold solver is deterministic
-• receivable held-to-maturity path works
-• early-purchase path correctly changes cash timing and borrowing
-• all deterministic tests pass
-• no unnecessary financial-agent or provider abstraction exists
-
-────────
-
-21. Frozen Gate — AI Financialization
-
-AI Financialization may extract document-supported facts into a proposed Deal
-input patch. Deterministic validation, visible user review and explicit Apply
-are required before any existing Deal input changes.
-
-Document timing anchors must remain explicit. In particular, SHIPMENT +90 is
-not automatically equivalent to Deal D+90. CONTRACT_DATE timing may map to Deal
-D+N only through an explicit application rule that treats the current Deal
-contract date as D+0.
-
-This gate is limited to:
-
-1. the bundled synthetic PDF demonstration;
-2. one structured extraction request for all documents;
-3. deterministic amount, currency, timing and payment-method validation;
-4. explicit user confirmation and a safe proposed Deal-input patch.
-
-Arbitrary PDF upload, insurance, guarantees, hedge execution, databases,
-authentication, BOK integration and RAG remain deferred. AI must never become
-the authoritative financial calculator.
-
-────────
-
-22. Frozen Gate — Deal Pre-check Report
-
-The Deal Pre-check Report is a deterministic, downloadable Korean business
-output generated from the current Deal inputs and already-computed canonical
-results. It may include official context already loaded in the session and
-explicit AI/user provenance, but report generation must not call AI or external
-APIs and must not add financial calculations.
-
-The report is generated in memory and is not persisted. It is a pre-decision
-aid, not a loan approval, credit assessment, accounting or legal statement, FX
-forecast, or contract acceptance recommendation.
-
-────────
-
-23. Implemented Component Boundaries
-
-```text
-Web MVP caller
-    ├──→ Financial Engine v0.1
-    ├──→ Deal Rescue Solver
-    ├──→ K-SURE payment context
-    ├──→ Trade Document Financialization → reviewed proposed Deal-input patch
-    ├──→ Financial Statement Financialization → Company Liquidity Profile
-    └──→ Single Deal Review Agent → grounded explanation of current evidence
-
-Deployment-deferred technical asset
-    └──→ Korea Eximbank reference-FX adapter
-```
-
-External APIs never run inside Financial Engine calculations. The public Web
-MVP does not expose Korea Eximbank retrieval.
-
-────────
-
-24. Frozen Gate — Financial Statement AI / Company Liquidity Profile
-
-Financial Statement Financialization extracts only the explicit facts listed in
-section 16.2 into a user-reviewable company-liquidity profile. It does not
-calculate or infer bank lending capacity, credit approval, a credit score,
-default, future cash flow, or the amount available to this Deal.
-
-The Deal-specific value “이번 거래에 실제 투입 가능한 회사자금” remains an
-explicit user-confirmed input. Retained earnings is never treated as cash or
-available liquidity.
-
-The implemented T1 vertical slice uses one bundled synthetic KRW financial
-statement, one explicit user action and one stored-disabled Responses API call.
-It normalizes the nine supported facts without calculating ratios, working
-capital, lending capacity, creditworthiness, or Deal available cash. Individual
-fields that need review do not hide other clean facts.
-
-The bundled statement includes retained earnings as a safety case, but neither
-the extraction schema nor `CompanyLiquidityProfile` contains a retained-earnings
-or Deal-available-cash field. The current Deal input remains unchanged.
-
-Future source strategy may use structured OpenDART data for a public/disclosing
-company or document AI for a private/non-disclosing SME. No OpenDART adapter,
-API key, company-code search or XBRL parser is implemented in T1.
-
-────────
-
-25. Frozen Gate — Company Liquidity & Funding Choice
-
-The implemented deterministic T2 comparison evaluates:
-
-1. internal company cash;
-2. an existing working-capital credit line;
-3. receivable early purchase.
-
-Bank credit uses only user-supplied existing facts:
-
-• total credit limit
-• used amount
-• optional explicit fee
-
-Unused limit is derived as total limit minus used amount; it is not a third
-editable source of truth. `DealCase.annual_funding_rate` is the borrowing-rate
-SSOT. Financial-statement cash remains context and never sets the user-confirmed
-Deal-specific available cash.
-
-The comparison derives funding capacity and any liquidity gap. It does not
-predict bank approval, recommend a bank, execute borrowing, or score
-creditworthiness.
-
-The T2 choices consume existing authoritative Financial Engine results. The
-credit-line explicit fee is included in the funding-choice cost comparison only
-when external credit is required; it is not injected into the frozen Deal Margin
-engine because that engine has no timed semantic for this fee.
-
-────────
-
-26. Frozen Gate — Banker's Usance
-
-Payment method and financing structure remain separate. Core Deal payment
-methods are OA and TT. L/C recognition remains extraction-only and unsupported
-by the core Deal engine unless a later explicit gate changes it. Do not create a
-generic `PAYMENT_USANCE` enum.
-
-The implemented Banker's Usance simulation is a narrow financing overlay on
-one selected existing foreign payable:
-
-```text
-supplier payment date
-        ↓
-bank pays supplier
-        ↓
-company repayment date
-        ↓
-financing interest + explicit fee
-```
-
-The supplier-economic payment day remains explicit while the company's cash
-payment moves to a user-supplied repayment day. The user supplies the Usance
-rate and fee. Current `FxRates` are used only as a deterministic KRW valuation
-basis; the simulation does not forecast FX or automatically hedge the payable.
-
-The comparison distinguishes reduced ordinary working-capital line use from
-total bank principal exposure. Usance principal remains a separate bank
-obligation during the tenor and is included in the combined bank-principal
-peak. The simulation does not determine Usance approval or limit and executes
-nothing.
-
-It does not implement a full L/C workflow, UCP document compliance, UPAS,
-document-discrepancy handling, or acceptance / negotiation bank workflows.
-
-────────
-
-27. Frozen Gate — FX Treasury / Forward Hedge Simulation
-
-Exposure is classified per currency, not by labeling the company simply as an
-exporter or importer:
-
-```text
-Net Exposure(currency)
-= receivables - payables
-```
-
-For each currency, the Treasury layer derives the amount-level natural offset,
-open exposure and the unfavorable FX direction. Matching receivable and payable
-amounts do not prove a timing-matched natural hedge; settlement timing risk may
-remain. Positive net exposure is foreign-currency
-receivable exposure; negative net exposure is foreign-currency payable
-exposure. The canonical Deal is mixed: USD is positive and JPY is negative.
-
-There is no FX forecast. A deterministic forward-hedge comparison accepts an
-actual or hypothetical bank quote and settlement spot supplied by the user and
-uses:
-
-• hedge ratio
-• hedge notional
-• forward rate
-• residual open exposure
-• hedged settlement cash flow
-• comparison with existing Stress results
-
-The simulation does not execute an FX transaction or state that hedging is
-universally better. The hedge profit/loss effect is an overlay on the frozen
-Financial Engine's financing-adjusted result. It does not recompute the Deal
-funding schedule with derivative settlement cash flows.
-
-────────
-
-28. Canonical Treasury Gate Sequence
-
-1. T1 — Financial Statement AI / Company Liquidity Profile
-2. T2 — Company Liquidity & Funding Choice
-3. T3 — FX Treasury / Forward Hedge Simulation
-4. T4 — Banker's Usance
-5. T5 — Treasury integration into Single Deal Review Agent
-6. T6 — Final Product Completion / Presentation IA RE0 / Report / Submission Freeze
-
-T6 authorizes:
-
-• T6-A Company Liquidity Timeline
-• manual company cash-plan input
-• ERP CSV export-file import
-• calendar-date company cash events
-• prospective Deal cashflow overlay
-• React Experience Shell
-• guided Agent UX orchestration
-• final report and submission finalization
-
-T1–T5 and T6-A through T6-D are implemented and frozen. The product is a final
-submission candidate. No separate T7 is defined and no feature work follows T6.
-
-────────
-
-29. Deferred Scope
-
-The following remain deferred:
-
-• full L/C workflow and UCP document compliance
-• UPAS
-• D/A / D/P engine expansion
-• FX forecasting
-• CFaR Monte Carlo
-• stochastic risk models
-• RAG
-• multi-agent architecture
-• arbitrary web search
-• Hugging Face runtime
-• insurance and guarantee execution
-• actual hedge execution
-• actual loan execution
-• bank credit approval prediction
-• buyer default prediction
-• database and authentication
-• EUR/CNY engine expansion
-
-────────
-
-30. T6-A — Company Liquidity Timeline
-
-Product positioning:
-
-```text
-기업 수출거래 Treasury 사전점검
-Company-aware Trade Treasury Pre-check
-```
-
-The primary user is an export/import SME or mid-sized company's finance or
-Treasury practitioner. The result may support preparation for discussion with a
-Corporate RM, Transaction Banking, Trade Finance, or FX desk. It is not bank
-credit approval, bank L/C operations software, an ERP/TMS replacement, or an
-accounting system.
-
-T6-A introduces a user-selected `as_of_date`. D0 means the current trade review
-date, not universally the contract, shipment, invoice, or delivery date. The
-frozen Deal Engine keeps integer D+n semantics. Deal events are resolved by:
-
-```text
-event_date = as_of_date + timedelta(days=deal_day)
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q src tests app.py components
 ```
 
-Document AI timing anchors remain separate. If document facts and user
-confirmation cannot resolve an actual date, the product does not invent one.
+Frontend source changes require:
 
-Canonical company liquidity input:
-
-```text
-as_of_date
-current_available_cash_krw
-minimum_operating_cash_krw
-existing_cash_events
-include_expected_events
+```powershell
+cd components\trade_treasury_experience\frontend
+npm ci
+npm run typecheck
+npm run build
 ```
-
-`current_available_cash_krw` is currently usable cash confirmed by Treasury. It
-is not financial-statement cash and does not replace frozen
-`DealCase.available_cash_krw`. The raw current-cash-minus-buffer difference is
-retained; the displayed starting surplus is floored at zero.
-
-Existing company cash events have a calendar date, category, signed KRW amount,
-CONFIRMED/EXPECTED status, MANUAL/ERP_IMPORT source, and non-empty reference.
-Positive amounts are inflows and negative amounts are outflows. Authoritative
-base calculation includes CONFIRMED events only. EXPECTED events remain visible
-and enter calculation only through an explicitly enabled scenario; they are not
-called forecasts, predictions, or AI estimates.
 
-The prospective Deal must not be duplicated in the company cash plan. Its events
-come exclusively from frozen `dated_cashflows(deal, fx)` and are overlaid with
-existing company events. At each event date:
+Canonical public acceptance values:
 
 ```text
-projected company cash
-= existing company cashflow + prospective Deal cashflow
-
-required external funding
-= max(0, minimum operating cash - projected company cash)
+Base margin                  14.64%
+Deal external borrowing      69M KRW
+Company peak gap             89M KRW
+Unused line                  70M KRW
+Residual gap                 19M KRW
+Peak date                    2026-11-03 / D+60
+USD -5% margin               11.20%
+Combined margin               8.83%
 ```
-
-The timeline reports projected cash, surplus after buffer, required external
-funding, minimum projected cash/date, peak liquidity gap/date, and ending cash.
-A comparison separates the company's gap without the Deal from the gap with the
-Deal and reports the incremental peak gap caused by the Deal.
-
-Canonical demo uses 2026-09-04, currently usable cash KRW 120,000,000, minimum
-operating cash KRW 70,000,000, and these existing company events only:
-
-• 2026-09-24 confirmed AR collection +40,000,000
-• 2026-10-04 confirmed payroll/tax -50,000,000
-• 2026-10-19 confirmed AR collection +20,000,000
-• 2026-10-29 expected AR collection +30,000,000
-• 2026-11-03 confirmed CAPEX payment -30,000,000
 
-The confirmed-only company plan without the Deal ends at KRW 100,000,000 and
-has no buffer gap. With the canonical prospective Deal, projected cash reaches
-KRW -19,000,000 and the peak liquidity gap is KRW 89,000,000 on 2026-11-03
-(D+60). The Deal therefore adds KRW 89,000,000 of peak gap. Against the canonical
-KRW 70,000,000 unused ordinary working-capital line, the company-wide timeline
-has a KRW 19,000,000 residual gap. These are deterministic demo results, not
-bank-approval predictions.
+Public Agent acceptance:
 
-Manual input and a standard CSV import share the same `CompanyCashEvent`
-contract. Canonical CSV columns are:
-
 ```text
-event_date,category,amount_krw,status,reference
+4 read-only tools
+2 model requests
+0 retries
 ```
-
-The imported source is normalized to `ERP_IMPORT`. The bundled CSV is synthetic,
-fictional demo data. “ERP 파일 가져오기” means importing a standard export file
-from systems such as SAP S/4HANA or 더존; it does not claim live connectivity.
-Future direct ERP APIs are adapters to this same canonical input. T6-A supports
-CSV only and adds no spreadsheet or ERP dependency.
-
-The Single Deal Review Agent and deterministic PDF report remain frozen in
-T6-A. Timeline integration belongs to later T6 slices. T6-A is implemented and
-frozen.
-
-────────
-
-31. T6-B — React Experience Shell
-
-T6-B adds one internal precompiled Streamlit Components v2 React and TypeScript bundle. It
-establishes exactly five presentation stages: 거래 정보, 회사 자금, 시나리오 분석,
-대응안 비교, and 종합 진단. `active_stage` is persistent component UI
-state; one optional `primary_action` trigger is reserved for experience wiring
-and does not execute AI in this slice.
-
-Python supplies already-formatted authoritative margin, Deal funding, company
-peak gap and credit-adjusted remaining gap. React renders these values but does
-not calculate, round, infer, or mutate finance. Dynamic user, ERP, external and
-AI text enters only through component data and is rendered as React text.
-
-The shell uses one CSS token layer, Lucide icons, restrained Motion state
-transitions, visible keyboard focus and responsive single-column cards. Motion
-respects the user's reduced-motion preference. Production frontend assets are
-precompiled and committed, so the public Python runtime does not require Node
-or npm.
-
-The company cash-plan UI bridge preserves `MANUAL` and `ERP_IMPORT` source
-provenance through editable presentation rows; source is read-only. This does
-not change the frozen Company Liquidity Timeline calculation.
-
-T6-B did not relocate or remove the existing native Streamlit sections.
-T6-C adds guided orchestration without changing finance. React owns compact stage
-navigation while native Streamlit owns inputs, calculations and actions. `active_stage`
-is component state; React never calculates finance. The existing Treasury evidence tool now also reads the deterministic
-Company Liquidity Timeline and current-line capacity. No new Agent, tool, retry,
-or simulated tool-progress sequence is introduced.
-
-T6-D keeps the same report path and adds only current, already-computed Company
-Liquidity, Funding, FX Treasury, Banker's Usance and current Deal Review evidence.
-The report never invokes AI or external data, and a stale review is omitted.
-`docs/submission.md` is the single canonical competition-submission source.
-
-### Workflow / calculation / official-data RE0
-
-The canonical public IA is 입력 | 분석 | 보고서 (default 분석). Outcomes precede input forms. Exact facts are edited on demand; presets select existing canonical scenario results without a calculation button. Custom scenarios have four exact inputs. Response assumptions are hidden until requested. The Agent remains optional in 보고서. This supersedes the historical five-stage presentation only, not finance/AI behavior.
 
-공식 데이터는 자동 호출하지 않는다. K-SURE 결제정보는 사용자가 명시적으로 불러온 국가·업종 집계 참고정보이며 출처와 기준일을 함께 표시한다. 한국수출입은행 기준환율의 공개 배포 신뢰성이 검증되기 전에는 데모 기준값을 공식값으로 표시하지 않는다. ECOS 조달금리와 기업경영분석 업종 수익성 수치는 신뢰 가능한 계열·업종 매핑과 공개 배포 검증 전까지 숫자를 노출하지 않는다.
+No test or deployment result may be reported as passed unless it was actually executed.
