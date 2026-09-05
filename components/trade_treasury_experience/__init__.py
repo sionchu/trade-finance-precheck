@@ -16,34 +16,9 @@ from src.finance.company_liquidity import (
 
 
 _BUILD_DIR = Path(__file__).parent / "frontend" / "build"
-_JS_COPY_REPLACEMENTS = {
-    "거래만 본 은행 필요액": "이번 거래에 필요한 외부자금",
-    "회사 자금계획 포함 Peak 부족": "회사 전체 최대 자금부족",
-    "미사용 한도 적용 후": "현재 한도 반영 후 부족",
-    "먼저 검토할 거래조건을 확인합니다.": "이번 거래의 핵심 조건부터 확인합니다.",
-    "거래와 회사의 기존 자금계획을 같은 시점에서 확인합니다.": "회사 일정까지 합쳐 실제 자금 여유를 확인합니다.",
-    "현재 근거를 바탕으로 한 번의 거래 검토를 실행합니다.": "현재 조건에서 필요한 검토 포인트를 확인합니다.",
-    "검토에 사용할 근거: 거래 분석 · Stress / 조건 경계 · 회사 유동성 / Treasury · 공식 결제 Context": (
-        "검토 근거 · 거래 수익성 · 회사 자금 · 외화위험 · 자금조달 · 결제 참고정보"
-    ),
-    "선택한 대응조건을 아래 결정론적 비교에서 확인합니다.": "선택한 조건을 아래 계산 결과와 비교해 보세요.",
-    "조건이 변경되어 다시 검토가 필요합니다.": (
-        "조건이 바뀌었습니다. 아래 거래 검토를 현재 조건으로 다시 실행해 주세요."
-    ),
-    "거래 검토 결과를 준비하고 있습니다.": "검토 결과를 불러오고 있습니다.",
-}
-
-
-def _runtime_js() -> str:
-    bundled = (Path(__file__).parent / "frontend" / "build" / "index.js").read_text(
-        encoding="utf-8"
-    )
-    for source, replacement in _JS_COPY_REPLACEMENTS.items():
-        bundled = bundled.replace(source, replacement)
-    return "/* bundled component */\n" + bundled
-
-
-_JS = _runtime_js()
+_JS = "/* bundled component */\n" + (_BUILD_DIR / "index.js").read_text(
+    encoding="utf-8"
+)
 _CSS = "/* bundled component */\n" + (_BUILD_DIR / "index.css").read_text(encoding="utf-8")
 
 
@@ -54,22 +29,7 @@ STAGES = (
     {"id": "treasury", "label": "대응 시뮬레이션"},
     {"id": "result", "label": "결과·보고서"},
 )
-REVIEW_GOALS = (
-    {"id": "overall", "label": "전체 보기"},
-    {"id": "liquidity", "label": "회사 자금"},
-    {"id": "fx", "label": "외화위험"},
-    {"id": "funding", "label": "자금조달"},
-)
-RESPONSE_ACTIONS = (
-    {"id": "price", "label": "가격·원가"},
-    {"id": "receivable", "label": "매출채권 현금화"},
-    {"id": "credit", "label": "운전자금 한도"},
-    {"id": "forward", "label": "선물환"},
-    {"id": "usance", "label": "Banker's Usance"},
-)
 VALID_STAGES = {stage["id"] for stage in STAGES}
-VALID_REVIEW_GOALS = {goal["id"] for goal in REVIEW_GOALS}
-VALID_RESPONSE_ACTIONS = {"none", *(action["id"] for action in RESPONSE_ACTIONS)}
 
 STAGE_GUIDE = (
     {"title": "거래 입력", "description": "PDF 또는 직접 입력으로 거래 사실을 확인합니다.", "next": "다음: 판단 기준을 조절합니다."},
@@ -224,14 +184,8 @@ def get_experience_state(key: str = "trade_treasury_experience") -> dict[str, st
         return str(value)
 
     active_stage = read("active_stage", "deal")
-    review_goal = read("review_goal", "overall")
-    response_action = read("response_action", "none")
     return {
         "active_stage": active_stage if active_stage in VALID_STAGES else "deal",
-        "review_goal": review_goal if review_goal in VALID_REVIEW_GOALS else "overall",
-        "response_action": (
-            response_action if response_action in VALID_RESPONSE_ACTIONS else "none"
-        ),
     }
 
 
@@ -284,7 +238,6 @@ def build_experience_data(
     remaining_gap_detail: str,
     remaining_gap_status: str,
     stage_states: Mapping[str, str] | None = None,
-    deal_facts: list[dict[str, str]] | None = None,
     review_status: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the presentation contract from already-formatted Python values."""
@@ -303,9 +256,6 @@ def build_experience_data(
             {**stage, "state": (stage_states or {}).get(stage["id"], "ready")}
             for stage in STAGES
         ],
-        "reviewGoals": [dict(goal) for goal in REVIEW_GOALS],
-        "responseActions": [dict(action) for action in RESPONSE_ACTIONS],
-        "dealFacts": deal_facts or [],
         "reviewState": dict(review_status or {}),
         "snapshot": [
             {
@@ -333,11 +283,6 @@ def build_experience_data(
                 "status": remaining_gap_status,
             },
         ],
-        "insight": {
-            "deal": f"{deal_funding} 필요",
-            "company": f"{company_peak_gap} 필요",
-            "afterCredit": remaining_gap_detail,
-        },
     }
 
 
@@ -352,16 +297,12 @@ def trade_treasury_experience(
     component_data = {
         **data,
         "activeStage": state["active_stage"],
-        "reviewGoal": state["review_goal"],
-        "responseAction": state["response_action"],
     }
     mount_args = {
         "key": key,
         "data": component_data,
-        "default": {"active_stage": "deal", "review_goal": "overall", "response_action": "none"},
+        "default": {"active_stage": "deal"},
         "on_active_stage_change": lambda: None,
-        "on_review_goal_change": lambda: None,
-        "on_response_action_change": lambda: None,
         "on_primary_action_change": lambda: None,
     }
     try:

@@ -4,8 +4,6 @@ import unittest
 
 from components.trade_treasury_experience import (
     HELP_TOPICS,
-    RESPONSE_ACTIONS,
-    REVIEW_GOALS,
     STAGE_GUIDE,
     STAGES,
     _JS,
@@ -36,14 +34,6 @@ class ExperienceShellTests(unittest.TestCase):
             [stage["label"] for stage in STAGES],
             ["거래 입력", "판단 기준", "회사 자금", "대응 시뮬레이션", "결과·보고서"],
         )
-        self.assertEqual(
-            [goal["id"] for goal in REVIEW_GOALS],
-            ["overall", "liquidity", "fx", "funding"],
-        )
-        self.assertEqual(
-            ["none", *(action["id"] for action in RESPONSE_ACTIONS)],
-            ["none", "price", "receivable", "credit", "forward", "usance"],
-        )
 
     def test_python_supplies_canonical_formatted_snapshot_with_plain_language(self):
         data = build_experience_data(
@@ -73,8 +63,9 @@ class ExperienceShellTests(unittest.TestCase):
         self.assertEqual(
             data["snapshot"][2]["detail"], "가장 부족한 날 · 2026-11-03"
         )
-        self.assertEqual(data["insight"]["company"], "8,900만원 필요")
-        self.assertEqual(data["reviewGoals"], list(REVIEW_GOALS))
+        self.assertNotIn("reviewGoals", data)
+        self.assertNotIn("responseActions", data)
+        self.assertNotIn("insight", data)
         self.assertNotIn("Deal-level", "\n".join(item["detail"] for item in data["snapshot"]))
 
     def test_help_center_is_collapsed_clickable_and_single_source(self):
@@ -92,7 +83,12 @@ class ExperienceShellTests(unittest.TestCase):
         ):
             self.assertIn(text, markup)
 
-    def test_runtime_copy_removes_prominent_internal_wording(self):
+    def test_source_build_and_runtime_copy_do_not_drift(self):
+        source = (FRONTEND / "src" / "ExperienceShell.tsx").read_text(encoding="utf-8")
+        built = (FRONTEND / "build" / "index.js").read_text(encoding="utf-8")
+        wrapper = (ROOT / "components" / "trade_treasury_experience" / "__init__.py").read_text(encoding="utf-8")
+        self.assertNotIn("_JS_COPY_REPLACEMENTS", wrapper)
+        self.assertEqual(_JS, "/* bundled component */\n" + built)
         for forbidden in (
             "거래만 본 은행 필요액",
             "회사 자금계획 포함 Peak 부족",
@@ -100,25 +96,32 @@ class ExperienceShellTests(unittest.TestCase):
             "Stress / 조건 경계",
             "공식 결제 Context",
         ):
+            self.assertNotIn(forbidden, source)
             self.assertNotIn(forbidden, _JS)
-        for expected in (
-            "이번 거래에 필요한 외부자금",
-            "회사 전체 최대 자금부족",
-            "현재 한도 반영 후 부족",
-            "판단 기준 조절",
-            "이 조건으로 거래 검토",
-        ):
+        for expected in ("현재 입력 기준 결과", "이 조건으로 거래 검토"):
             self.assertIn(expected, _JS)
+
+    def test_shell_owns_navigation_not_duplicate_stage_ctas(self):
+        source = (FRONTEND / "src" / "ExperienceShell.tsx").read_text(encoding="utf-8")
+        for duplicate_cta in (
+            "판단 기준 조절",
+            "회사 자금 확인",
+            "대응 시뮬레이션</button>",
+            "결과·보고서 확인",
+        ):
+            self.assertNotIn(duplicate_cta, source)
+        self.assertIn("이 조건으로 거래 검토", source)
 
     def test_visual_css_removes_persistent_kpi_wall_and_adds_help(self):
         source = (FRONTEND / "src" / "styles.css").read_text(encoding="utf-8")
         built = (FRONTEND / "build" / "index.css").read_text(encoding="utf-8")
         for css in (source, built):
-            self.assertRegex(css, r"\.snapshot-grid\s*\{\s*display:\s*none;?\s*\}")
+            self.assertNotIn(".snapshot-grid", css)
+            self.assertNotIn(".fact-grid", css)
+            self.assertNotIn(".choice-grid", css)
             self.assertIn(".help-center", css)
             self.assertIn(".help-topic", css)
-            self.assertRegex(css, r"\.insight div:{1,2}before")
-            self.assertIn("회사 전체 최대 자금부족", css)
+            self.assertNotIn(".insight", css)
 
     def test_frontend_has_no_finance_or_ai_dependency(self):
         source = "\n".join(
@@ -128,8 +131,8 @@ class ExperienceShellTests(unittest.TestCase):
         for forbidden in ("src.finance", "evaluate_deal", "openai", "ksure"):
             self.assertNotIn(forbidden, source)
         self.assertIn('active_stage: stageid', source)
-        self.assertIn('review_goal: reviewgoal', source)
-        self.assertIn('response_action: responseaction', source)
+        self.assertNotIn('review_goal: reviewgoal', source)
+        self.assertNotIn('response_action: responseaction', source)
         self.assertNotIn('"continue"', source)
         self.assertNotIn("settimeout", source)
         self.assertNotIn("추천", source)

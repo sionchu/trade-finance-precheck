@@ -90,9 +90,9 @@ Maintain keyboard navigation, visible focus, semantic buttons/headings/disclosur
 
 ## Implementation notes
 
-The canonical React tokens live in `components/trade_treasury_experience/frontend/src/styles.css`. New visual values must extend those semantic roles instead of adding scattered literals. The internal precompiled Streamlit Components v2 React bundle owns orientation and user intent; Streamlit/Python remains the behavior and finance authority.
+The canonical React tokens live in `components/trade_treasury_experience/frontend/src/styles.css`. New visual values must extend those semantic roles instead of adding scattered literals. The internal precompiled Streamlit Components v2 React bundle owns stage orientation and current status; Streamlit/Python owns inputs, actions, evidence, and finance authority.
 
-The wrapper performs a bounded Korean copy-normalization pass over the committed bundle so the deployed static bundle and the presentation SSOT use the same user-facing terminology without touching finance or Agent behavior. This map is copy-only and must never change logic, state, or calculations.
+User-facing shell copy is authored in `ExperienceShell.tsx` and deployed from the committed build without runtime string replacement. Source changes must be followed by a frontend build so source and runtime wording stay identical.
 
 ## Guided decision loop
 

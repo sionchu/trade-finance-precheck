@@ -137,8 +137,6 @@ def metric_by_label(app, label):
 def trigger_component_review(app):
     app.session_state["trade_treasury_experience"] = {
         "active_stage": "result",
-        "review_goal": "overall",
-        "response_action": "none",
         "primary_action": "run_review",
     }
     # Most web tests inspect the same execution's native result. Dedicated
@@ -152,7 +150,7 @@ def switch_stage(app, stage):
         state = dict(app.session_state["trade_treasury_experience"])
     except KeyError:
         state = {}
-    state.update({"active_stage": stage, "review_goal": state.get("review_goal", "overall"), "response_action": state.get("response_action", "none")})
+    state["active_stage"] = stage
     state.pop("primary_action", None)
     app.session_state["trade_treasury_experience"] = state
     return app.run()
@@ -432,8 +430,6 @@ class WebMvpTests(unittest.TestCase):
         app, _, _, _ = self.render_without_credentials()
         app.session_state["trade_treasury_experience"] = {
             "active_stage": "result",
-            "review_goal": "overall",
-            "response_action": "none",
         }
         app.run()
         switch_stage(app, "result")
@@ -695,8 +691,6 @@ class WebMvpTests(unittest.TestCase):
             app = AppTest.from_file(app_path, default_timeout=10)
             app.session_state["trade_treasury_experience"] = {
                 "active_stage": "result",
-                "review_goal": "overall",
-                "response_action": "none",
             }
             app.run()
 
@@ -734,8 +728,6 @@ class WebMvpTests(unittest.TestCase):
             app = AppTest.from_file(app_path, default_timeout=10)
             app.session_state["trade_treasury_experience"] = {
                 "active_stage": "result",
-                "review_goal": "overall",
-                "response_action": "none",
             }
             app.run()
 

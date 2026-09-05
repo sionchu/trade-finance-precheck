@@ -393,10 +393,8 @@ st.markdown('<div class="product-label">COMPANY-AWARE TRADE TREASURY PRE-CHECK</
 st.title("기업 수출거래 Treasury 사전점검")
 experience_state = get_experience_state()
 active_stage = experience_state["active_stage"]
-review_goal = "overall"
-response_action = experience_state["response_action"]
 st.markdown(
-    '<p class="product-lead">거래와 회사 일정을 합쳐 보고, 자금·환율 조건을 조절합니다.</p>',
+    '<p class="product-lead">수출계약 전에 수익성·회사 자금·환율 위험을 함께 확인합니다.</p>',
     unsafe_allow_html=True,
 )
 st.caption("사전 의사결정 지원용 · 금융 실행, 환율 예측 또는 신용평가 서비스가 아닙니다.")
@@ -1978,7 +1976,7 @@ treasury_review_context = TreasuryReviewContext(
     company_cash_capacity=company_credit_capacity,
 )
 
-default_review_question = REVIEW_GOAL_QUESTIONS[review_goal]
+default_review_question = REVIEW_GOAL_QUESTIONS["overall"]
 custom_review_question = st.session_state.get("custom_deal_review_question", "")
 if active_stage == "result":
     st.subheader("거래 검토 요약")
@@ -2037,12 +2035,6 @@ if experience_data is not None:
     experience_data["stages"] = [
         {**stage, "state": stage_states[stage["id"]]}
         for stage in experience_data["stages"]
-    ]
-    experience_data["dealFacts"] = [
-        {"label": "수출금액", "value": f"{deal.sale.currency.value} {deal.sale.amount:,.0f}", "source": "문서 추출 · 확인 반영" if document_ai_status.value == "CURRENT" else "데모 기준값" if deal.sale.amount == reference.sale.amount else "사용자 입력"},
-        {"label": "결제방식", "value": deal.sale.payment_method.value, "source": "문서 추출 · 확인 반영" if document_ai_status.value == "CURRENT" else "현재 입력"},
-        {"label": "수취시점", "value": f"D+{deal.sale.collection_day}", "source": "데모 기준값" if deal.sale.collection_day == reference.sale.collection_day else "사용자 입력"},
-        {"label": "USD / JPY 지급", "value": " · ".join(f"{p.currency.value} {p.amount:,.0f}" for p in deal.foreign_payables), "source": "현재 거래"},
     ]
     experience_data["reviewState"] = {
         "ready": treasury_review_ready,
