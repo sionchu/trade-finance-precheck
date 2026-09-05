@@ -1,4 +1,4 @@
-기업 수출거래 Treasury 사전점검 — Product Spec v0.1
+수출거래 AI 금융진단 — Product Spec v0.1
 
 Status: Canonical implementation and product specification
 Purpose: 2026 금융 AI Challenge MVP
@@ -1679,6 +1679,6 @@ The report never invokes AI or external data, and a stale review is omitted.
 
 ### Workflow / calculation / official-data RE0
 
-The canonical user order is 거래 정보 → 회사 자금 → 시나리오 분석 → 대응안 비교 → 종합 진단. 계약 회수조건은 거래 사실이며, 회수지연은 별도 시나리오다. 현재 실제 조달금리와 거래 투입가능 회사자금은 회사의 현재 조건으로 분류한다. 기본 진단과 시나리오에는 명시적 계산 경계를 두며, 편집 중인 값이 마지막 계산값과 다르면 재계산 전 상태임을 표시한다.
+The canonical public IA is 입력 | 분석 | 보고서 (default 분석). Outcomes precede input forms. Exact facts are edited on demand; presets select existing canonical scenario results without a calculation button. Custom scenarios have four exact inputs. Response assumptions are hidden until requested. The Agent remains optional in 보고서. This supersedes the historical five-stage presentation only, not finance/AI behavior.
 
 공식 데이터는 자동 호출하지 않는다. K-SURE 결제정보는 사용자가 명시적으로 불러온 국가·업종 집계 참고정보이며 출처와 기준일을 함께 표시한다. 한국수출입은행 기준환율의 공개 배포 신뢰성이 검증되기 전에는 데모 기준값을 공식값으로 표시하지 않는다. ECOS 조달금리와 기업경영분석 업종 수익성 수치는 신뢰 가능한 계열·업종 매핑과 공개 배포 검증 전까지 숫자를 노출하지 않는다.

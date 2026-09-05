@@ -150,14 +150,12 @@ p,
 }
 
 @media (max-width: 48rem) {
-    [class*="st-key-fx_presets_"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; gap: 0.25rem; }
-    [class*="st-key-fx_presets_"] [data-testid="stColumn"] { min-width: 0 !important; width: 0 !important; flex: 1 1 0 !important; }
-    [class*="st-key-fx_presets_"] button { padding-inline: 0.15rem; }
-    [class*="st-key-fx_presets_"] button p { font-size: 0.8rem; white-space: nowrap; }
+    .funding-relationship { flex-direction: column; align-items: stretch !important; gap: .75rem !important; }
+    .funding-relationship .flow-connector { font-size: 0; }
+    .funding-relationship .flow-connector::before { content: "↓"; font-size: 1.3rem; }
     [class*="st-key-comparison_"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; gap: 0.4rem; }
     [class*="st-key-comparison_"] [data-testid="stColumn"] { min-width: 0 !important; width: 0 !important; flex: 1 1 0 !important; }
     [class*="st-key-comparison_"] [data-testid="stMetricValue"] { font-size: 1.15rem; }
-    [data-testid="stSlider"] { padding-block: 0.3rem; }
     .block-container {
         padding: 1.35rem 1rem 3rem;
     }
@@ -176,3 +174,21 @@ p,
         font-size: 1.8rem;
     }
 }
+
+.funding-relationship { display: flex; align-items: center; justify-content: space-between; gap: 1.1rem; padding: 1.5rem 0; border-block: 1px solid var(--color-border); }
+.funding-relationship > div { min-width: 0; }
+.funding-relationship span, .funding-relationship small { display: block; color: var(--color-text-muted); font-size: .9rem; }
+.funding-relationship strong { display: block; margin-top: .4rem; font-size: 1.9rem; font-variant-numeric: tabular-nums; }
+.flow-connector { text-align: center; color: var(--color-text-muted); }
+.flow-connector small { max-width: 10rem; margin: auto; }
+
+
+.flow-connector small { word-break: keep-all; }
+@media (max-width: 48rem) {
+    h3 { font-size: 1.2rem !important; margin-top: 1.25rem; }
+    .funding-relationship { padding: .75rem 0; gap: .4rem !important; }
+    .funding-relationship strong { font-size: 1.55rem; margin-top: .15rem; }
+}
+
+
+p { word-break: keep-all; overflow-wrap: break-word; }

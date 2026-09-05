@@ -22,21 +22,16 @@ _JS = "/* bundled component */\n" + (_BUILD_DIR / "index.js").read_text(
 _CSS = "/* bundled component */\n" + (_BUILD_DIR / "index.css").read_text(encoding="utf-8")
 
 
-STAGES = (
-    {"id": "deal", "label": "거래 정보"},
-    {"id": "liquidity", "label": "회사 자금"},
-    {"id": "review", "label": "시나리오 분석"},
-    {"id": "treasury", "label": "대응안 비교"},
-    {"id": "result", "label": "종합 진단"},
+VIEWS = (
+    {"id": "setup", "label": "입력"},
+    {"id": "analysis", "label": "분석"},
+    {"id": "report", "label": "보고서"},
 )
-VALID_STAGES = {stage["id"] for stage in STAGES}
-
-STAGE_GUIDE = (
-    {"title": "거래 정보", "description": "PDF 또는 직접 입력으로 계약 사실을 확인합니다.", "next": "다음: 회사의 현재 자금조건을 입력합니다."},
-    {"title": "회사 자금", "description": "현재 현금·한도·금리와 기존 자금계획을 확인합니다.", "next": "입력을 마치면 기본 진단을 계산합니다."},
-    {"title": "시나리오 분석", "description": "환율·금리·회수지연 가정을 적용해 기본 결과와 비교합니다.", "next": "다음: 부족분과 위험의 대응안을 비교합니다."},
-    {"title": "대응안 비교", "description": "운전자금·매출채권·선물환·Usance의 현재→대안→변화를 봅니다.", "next": "다음: 종합 진단과 보고서를 확인합니다."},
-    {"title": "종합 진단", "description": "결정론적 결과를 먼저 보고 선택적으로 거래 검토를 실행합니다.", "next": "보고서를 저장하거나 입력을 다시 조절합니다."},
+VALID_VIEWS = {view["id"] for view in VIEWS}
+VIEW_GUIDE = (
+    {"title": "입력", "description": "거래·회사 정보를 요약으로 확인하고 필요한 값만 수정합니다.", "next": "변경사항 적용 후 분석에 반영됩니다."},
+    {"title": "분석", "description": "수익성, 회사 현금흐름과 선택한 악화 조건의 차이를 봅니다.", "next": "대응안의 현재·대안·변화를 비교합니다."},
+    {"title": "보고서", "description": "현재 결과를 저장하고 선택적으로 AI 거래 검토를 실행합니다.", "next": "현재 조건의 PDF 보고서를 내려받습니다."},
 )
 
 HELP_TOPICS = (
@@ -62,7 +57,7 @@ HELP_TOPICS = (
     },
     {
         "title": "현재 가용현금",
-        "description": "Treasury가 지금 실제로 사용할 수 있다고 확인한 현금입니다.",
+        "description": "회사가 지금 실제로 사용할 수 있다고 확인한 현금입니다.",
         "caution": "재무제표상 현금과 자동으로 같은 값으로 보지 않습니다.",
     },
     {
@@ -132,7 +127,7 @@ def _component_html() -> str:
             f'<small>{html_escape(step["next"])}</small>'
             "</div>"
         )
-        for index, step in enumerate(STAGE_GUIDE, start=1)
+        for index, step in enumerate(VIEW_GUIDE, start=1)
     )
     topics = "".join(
         (
@@ -150,13 +145,13 @@ def _component_html() -> str:
         '<summary><span class="help-mark">?</span><span>용어·사용법</span></summary>'
         '<div class="help-panel" role="region" aria-label="서비스 도움말">'
         '<div class="help-heading"><span>처음이라면</span>'
-        '<strong>다섯 단계만 따라가면 됩니다</strong>'
-        '<p>숫자를 외우기보다 각 단계에서 무엇을 확인하는지 먼저 보세요.</p></div>'
+        '<strong>분석에서 먼저 결과를 확인하세요</strong>'
+        '<p>입력은 필요한 값만 수정하고, 보고서에서 결과를 저장합니다.</p></div>'
         f'<div class="help-steps">{steps}</div>'
         '<h2>용어·계산 기준</h2>'
         f'<div class="help-topic-list">{topics}</div>'
         '<p class="help-footnote">조건을 바꾼 뒤 이전 결과가 남아 있다면 상단의 '
-        '<strong>종합 진단</strong> 단계에서 현재 조건으로 다시 검토하세요.</p>'
+        '<strong>보고서</strong> 화면에서 현재 조건으로 다시 검토하세요.</p>'
         "</div></details>"
     )
 
@@ -183,10 +178,9 @@ def get_experience_state(key: str = "trade_treasury_experience") -> dict[str, st
             value = getattr(persisted, name, default)
         return str(value)
 
-    active_stage = read("active_stage", "deal")
-    return {
-        "active_stage": active_stage if active_stage in VALID_STAGES else "deal",
-    }
+    active_view = read("active_view", "analysis")
+    return {"active_view": active_view if active_view in VALID_VIEWS else "analysis"}
+
 
 
 def company_cash_events_from_rows(rows) -> tuple[CompanyCashEvent, ...]:
@@ -226,84 +220,15 @@ def company_cash_rows(events) -> list[dict[str, Any]]:
     ]
 
 
-def build_experience_data(
-    *,
-    margin: str,
-    margin_detail: str,
-    margin_status: str,
-    deal_funding: str,
-    company_peak_gap: str,
-    company_peak_detail: str,
-    remaining_gap: str,
-    remaining_gap_detail: str,
-    remaining_gap_status: str,
-    stage_states: Mapping[str, str] | None = None,
-    review_status: Mapping[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build the presentation contract from already-formatted Python values."""
-    peak_detail = company_peak_detail
-    if company_peak_detail.startswith("Peak "):
-        peak_detail = "가장 부족한 날 · " + company_peak_detail.removeprefix("Peak ")
-    return {
-        "product": {
-            "title": "기업 수출거래 Treasury 사전점검",
-            "subtitle": (
-                "거래조건과 회사 자금계획을 함께 보고, "
-                "이 거래를 실제로 감당할 수 있는지 확인합니다."
-            ),
-        },
-        "stages": [
-            {**stage, "state": (stage_states or {}).get(stage["id"], "ready")}
-            for stage in STAGES
-        ],
-        "reviewState": dict(review_status or {}),
-        "snapshot": [
-            {
-                "label": "현재 마진",
-                "value": margin,
-                "detail": margin_detail,
-                "status": margin_status,
-            },
-            {
-                "label": "이번 거래에 필요한 외부자금",
-                "value": deal_funding,
-                "detail": "이번 거래에 배정한 현금 기준",
-                "status": "neutral",
-            },
-            {
-                "label": "회사 전체 최대 자금부족",
-                "value": company_peak_gap,
-                "detail": peak_detail,
-                "status": "warning",
-            },
-            {
-                "label": "현재 한도 반영 후 부족",
-                "value": remaining_gap,
-                "detail": remaining_gap_detail,
-                "status": remaining_gap_status,
-            },
-        ],
-    }
-
-
-def trade_treasury_experience(
-    data: dict[str, Any],
-    *,
-    key: str = "trade_treasury_experience",
-):
-    """Mount the presentation-only Treasury shell."""
+def trade_treasury_experience(*, key: str = "trade_treasury_experience"):
+    """Mount three-view navigation; inputs and actions belong to Streamlit."""
     global _experience_shell
     state = get_experience_state(key)
-    component_data = {
-        **data,
-        "activeStage": state["active_stage"],
-    }
     mount_args = {
         "key": key,
-        "data": component_data,
-        "default": {"active_stage": "deal"},
-        "on_active_stage_change": lambda: None,
-        "on_primary_action_change": lambda: None,
+        "data": {"views": VIEWS, "activeView": state["active_view"]},
+        "default": {"active_view": "analysis"},
+        "on_active_view_change": lambda: None,
     }
     try:
         return _experience_shell(**mount_args)

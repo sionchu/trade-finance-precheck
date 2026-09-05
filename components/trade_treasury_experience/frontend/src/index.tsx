@@ -32,7 +32,6 @@ const renderExperience: FrontendRenderer<ExperienceState, ExperienceData> = (
       <ExperienceShell
         data={args.data}
         setStateValue={args.setStateValue}
-        setTriggerValue={args.setTriggerValue}
       />
     </StrictMode>,
   );

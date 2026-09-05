@@ -90,16 +90,16 @@ Maintain keyboard navigation, visible focus, semantic buttons/headings/disclosur
 
 ## Implementation notes
 
-The canonical React tokens live in `components/trade_treasury_experience/frontend/src/styles.css`. New visual values must extend those semantic roles instead of adding scattered literals. The internal precompiled Streamlit Components v2 React bundle owns stage orientation and current status; Streamlit/Python owns inputs, actions, evidence, and finance authority.
+The canonical React tokens live in `components/trade_treasury_experience/frontend/src/styles.css`. New visual values must extend those semantic roles instead of adding scattered literals. The internal precompiled Streamlit Components v2 React bundle owns three-view navigation; Streamlit/Python owns inputs, actions, evidence, and finance authority.
 
 User-facing shell copy is authored in `ExperienceShell.tsx` and deployed from the committed build without runtime string replacement. Source changes must be followed by a frontend build so source and runtime wording stay identical.
 
 ## Guided decision loop
 
-The five stages are 거래 정보 → 회사 자금 → 시나리오 분석 → 대응안 비교 → 종합 진단. Internal stage IDs remain compatible. Contract facts use exact inputs. Current company cash, Deal allocation, credit and actual funding rate live in 회사 자금. Target, FX, funding-rate stress and collection-delay stress live in 시나리오 분석 and require an explicit calculation action; edited and last-applied values are visibly distinct. Company cash uses the existing timeline as a native step chart. Alternatives show 현재 → 대안 → 변화, including unchanged bank principal. Deterministic results lead; the single optional Agent action and report live together in 종합 진단. Tool completion is shown only after actual success.
+The three views are 입력 | 분석 | 보고서, with 분석 as the default. Setup opens with formatted Deal/company facts; edit forms and the cash-plan editor are opt-in. Analysis leads with a bounded deterministic conclusion, the connected Deal/company/residual funding relationship, and the existing cash timeline. Presets select one frozen scenario against Base; only custom comparison reveals four exact fields. Response assumptions stay behind 조건 수정, with no sliders. Report shows a compact base summary, optional Agent review and PDF. There is no five-stage compatibility mapping or duplicate navigation state.
 
 ## Final product freeze
 
-- Native evidence remains stage-exclusive: each stage shows only its detailed inputs, evidence, or result actions while the experience shell remains visible.
-- The shell uses neutral unavailable values and Python-supplied `complete`, `ready`, or `blocked` states when an input is invalid; it never disappears or infers readiness.
-- The result stage is the single report/download entry. The deterministic PDF uses the final Treasury brand and includes only current application evidence; stale AI prose is excluded.
+- Native content is view-exclusive: setup facts/forms, analysis outcomes/comparisons, report summary/optional Agent/PDF.
+- The shell stays visible on invalid input; Python displays correction feedback and blocks Agent execution when required evidence is unavailable.
+- The report view is the single report/download entry. The deterministic PDF uses 수출거래 AI 금융진단 branding and includes only current application evidence; stale AI prose is excluded.

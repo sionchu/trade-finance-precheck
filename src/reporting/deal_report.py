@@ -244,7 +244,7 @@ def _footer(canvas, document) -> None:
     canvas.saveState()
     canvas.setFont(FONT_NAME, 7)
     canvas.setFillColor(MUTED)
-    canvas.drawString(18 * mm, 10 * mm, "기업 수출거래 Treasury 사전점검")
+    canvas.drawString(18 * mm, 10 * mm, "수출거래 AI 금융진단")
     canvas.drawRightString(192 * mm, 10 * mm, f"{document.page}")
     canvas.restoreState()
 
@@ -257,8 +257,8 @@ def build_deal_report(report: DealReportInput) -> bytes:
     document = SimpleDocTemplate(
         buffer, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm,
         topMargin=14 * mm, bottomMargin=16 * mm,
-        title="기업 수출거래 Treasury 사전점검 보고서",
-        author="Company-aware Trade Treasury Pre-check",
+        title="수출거래 AI 금융진단 보고서",
+        author="Export Deal Financial Diagnosis",
     )
     story: list = []
     basis = report_basis_text(
@@ -266,8 +266,8 @@ def build_deal_report(report: DealReportInput) -> bytes:
         report.ai_analysis_exists,
     )
     story.extend([
-        _p("Company-aware Trade Treasury Pre-check", styles["subtitle"]),
-        _p("기업 수출거래 Treasury 사전점검 보고서", styles["title"]),
+        _p("Export Deal Financial Diagnosis", styles["subtitle"]),
+        _p("수출거래 AI 금융진단 보고서", styles["title"]),
         _p(
             f"생성시각 {report.generated_at.strftime('%Y-%m-%d %H:%M %Z')} / "
             "분석용 사전점검 / 은행 승인 / 금융 실행 / 신용평가 아님",
@@ -448,9 +448,9 @@ def build_deal_report(report: DealReportInput) -> bytes:
             _p("일반 운전자금 사용 감소는 총 은행 원금채무가 사라진다는 뜻이 아니며, 승인·실행을 판단하지 않습니다.", styles["small"]),
         ])
 
-    story.append(_p("6. FX Treasury", styles["section"]))
+    story.append(_p("6. 외화위험 / 선물환", styles["section"]))
     if report.fx_treasury is None:
-        story.append(_p("현재 조건 기준 FX Treasury 요약 없음", styles["body"]))
+        story.append(_p("현재 조건 기준 외화위험 요약 없음", styles["body"]))
     else:
         position_rows = [["통화", "수취", "지급", "금액 기준 상계", "순노출 / 불리한 방향"]]
         for position in report.fx_treasury.positions:
@@ -541,7 +541,7 @@ def build_deal_report(report: DealReportInput) -> bytes:
     )
     provenance = [
         ["구분", "이 보고서의 근거"],
-        ["User-entered / Treasury-confirmed fact", "현재 거래조건, 현재 가용현금, 최소 운영자금, 한도와 사용자 시나리오"],
+        ["User-entered / company-confirmed fact", "현재 거래조건, 현재 가용현금, 최소 운영자금, 한도와 사용자 시나리오"],
         ["ERP-imported company cash-plan event", "표준 CSV에서 가져온 이벤트는 ERP_IMPORT 출처를 유지"],
         ["AI-extracted document fact", ai_provenance],
         ["Observed official aggregate data", official_context],

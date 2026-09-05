@@ -1,142 +1,58 @@
 from decimal import Decimal
 from pathlib import Path
 import unittest
-
+from unittest.mock import patch
 from components.trade_treasury_experience import (
-    HELP_TOPICS,
-    STAGE_GUIDE,
-    STAGES,
-    _JS,
-    _component_html,
-    build_experience_data,
-    company_cash_events_from_rows,
-    company_cash_rows,
+    HELP_TOPICS, VIEW_GUIDE, VIEWS, _JS, _component_html,
+    get_experience_state, company_cash_events_from_rows, company_cash_rows,
     trade_treasury_experience,
 )
-from src.finance.company_liquidity import (
-    CompanyCashEventSource,
-    parse_company_cash_events_csv,
-)
-
+from src.finance.company_liquidity import CompanyCashEventSource, parse_company_cash_events_csv
 
 ROOT = Path(__file__).parents[1]
 FRONTEND = ROOT / "components" / "trade_treasury_experience" / "frontend"
 
-
 class ExperienceShellTests(unittest.TestCase):
-    def test_wrapper_imports_and_has_five_exact_stages(self):
-        self.assertTrue(callable(trade_treasury_experience))
-        self.assertEqual(
-            [stage["id"] for stage in STAGES],
-            ["deal", "liquidity", "review", "treasury", "result"],
-        )
-        self.assertEqual(
-            [stage["label"] for stage in STAGES],
-            ["거래 정보", "회사 자금", "시나리오 분석", "대응안 비교", "종합 진단"],
-        )
+    def test_three_exact_views_and_default_analysis(self):
+        self.assertEqual([view["id"] for view in VIEWS], ["setup", "analysis", "report"])
+        self.assertEqual([view["label"] for view in VIEWS], ["입력", "분석", "보고서"])
+        with patch("components.trade_treasury_experience.st.session_state", {}):
+            self.assertEqual(get_experience_state(), {"active_view": "analysis"})
+        for view in ("setup", "analysis", "report"):
+            with patch("components.trade_treasury_experience.st.session_state", {"trade_treasury_experience": {"active_view": view}}):
+                self.assertEqual(get_experience_state()["active_view"], view)
+        with patch("components.trade_treasury_experience.st.session_state", {"trade_treasury_experience": {"active_view": "invalid"}}):
+            self.assertEqual(get_experience_state()["active_view"], "analysis")
 
-    def test_python_supplies_canonical_formatted_snapshot_with_plain_language(self):
-        data = build_experience_data(
-            margin="14.64%",
-            margin_detail="목표 충족",
-            margin_status="success",
-            deal_funding="6,900만원",
-            company_peak_gap="8,900만원",
-            company_peak_detail="Peak 2026-11-03",
-            remaining_gap="1,900만원",
-            remaining_gap_detail="1,900만원 부족",
-            remaining_gap_status="danger",
-        )
-        self.assertEqual(
-            [item["value"] for item in data["snapshot"]],
-            ["14.64%", "6,900만원", "8,900만원", "1,900만원"],
-        )
-        self.assertEqual(
-            [item["label"] for item in data["snapshot"]],
-            [
-                "현재 마진",
-                "이번 거래에 필요한 외부자금",
-                "회사 전체 최대 자금부족",
-                "현재 한도 반영 후 부족",
-            ],
-        )
-        self.assertEqual(
-            data["snapshot"][2]["detail"], "가장 부족한 날 · 2026-11-03"
-        )
-        self.assertNotIn("reviewGoals", data)
-        self.assertNotIn("responseActions", data)
-        self.assertNotIn("insight", data)
-        self.assertNotIn("Deal-level", "\n".join(item["detail"] for item in data["snapshot"]))
-
-    def test_help_center_is_collapsed_clickable_and_single_source(self):
+    def test_help_is_collapsed_single_source(self):
         markup = _component_html()
         self.assertIn('<details class="help-center">', markup)
-        self.assertIn("용어·사용법", markup)
-        self.assertEqual(len(STAGE_GUIDE), 5)
+        self.assertEqual(len(VIEW_GUIDE), 3)
         self.assertGreaterEqual(len(HELP_TOPICS), 12)
-        for text in (
-            "회사 전체 최대 자금부족",
-            "현재 한도 반영 후 부족",
-            "Banker&#x27;s Usance",
-            "CONFIRMED / EXPECTED",
-            "거래 검토",
-        ):
-            self.assertIn(text, markup)
+        self.assertNotIn("Treasury", markup)
+        self.assertIn("용어·사용법", markup)
 
-    def test_source_build_and_runtime_copy_do_not_drift(self):
-        source = (FRONTEND / "src" / "ExperienceShell.tsx").read_text(encoding="utf-8")
-        built = (FRONTEND / "build" / "index.js").read_text(encoding="utf-8")
-        wrapper = (ROOT / "components" / "trade_treasury_experience" / "__init__.py").read_text(encoding="utf-8")
-        self.assertNotIn("_JS_COPY_REPLACEMENTS", wrapper)
+    def test_runtime_uses_build_without_copy_patch(self):
+        built = (FRONTEND / "build/index.js").read_text(encoding="utf-8")
+        wrapper = (ROOT / "components/trade_treasury_experience/__init__.py").read_text(encoding="utf-8")
         self.assertEqual(_JS, "/* bundled component */\n" + built)
-        for forbidden in (
-            "거래만 본 은행 필요액",
-            "회사 자금계획 포함 Peak 부족",
-            "미사용 한도 적용 후",
-            "Stress / 조건 경계",
-            "공식 결제 Context",
-        ):
+        self.assertNotIn("_JS_COPY_REPLACEMENTS", wrapper)
+        self.assertNotIn("active_stage", wrapper)
+
+    def test_frontend_owns_only_accessible_navigation(self):
+        source = (FRONTEND / "src/ExperienceShell.tsx").read_text(encoding="utf-8")
+        self.assertIn('active_view: ViewId', source)
+        self.assertIn('aria-current', source)
+        self.assertIn('<button', source)
+        for forbidden in ("setTriggerValue", "primary_action", "run_review", "setTimeout", "active_stage", "evaluate_deal", "openai", "src.finance", "추천"):
             self.assertNotIn(forbidden, source)
-            self.assertNotIn(forbidden, _JS)
-        for expected in ("현재 계산 기준 종합 결과", "이 조건으로 거래 검토"):
-            self.assertIn(expected, _JS)
+        self.assertIn('reducedMotion="user"', source)
 
-    def test_shell_owns_navigation_not_duplicate_stage_ctas(self):
-        source = (FRONTEND / "src" / "ExperienceShell.tsx").read_text(encoding="utf-8")
-        for duplicate_cta in (
-            "판단 기준 조절",
-            "회사 자금 확인",
-            "대응 시뮬레이션</button>",
-            "결과·보고서 확인",
-        ):
-            self.assertNotIn(duplicate_cta, source)
-        self.assertIn("이 조건으로 거래 검토", source)
-
-    def test_visual_css_removes_persistent_kpi_wall_and_adds_help(self):
-        source = (FRONTEND / "src" / "styles.css").read_text(encoding="utf-8")
-        built = (FRONTEND / "build" / "index.css").read_text(encoding="utf-8")
-        for css in (source, built):
-            self.assertNotIn(".snapshot-grid", css)
-            self.assertNotIn(".fact-grid", css)
-            self.assertNotIn(".choice-grid", css)
-            self.assertIn(".help-center", css)
-            self.assertIn(".help-topic", css)
-            self.assertNotIn(".insight", css)
-
-    def test_frontend_has_no_finance_or_ai_dependency(self):
-        source = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in (FRONTEND / "src").glob("*.*")
-        ).lower()
-        for forbidden in ("src.finance", "evaluate_deal", "openai", "ksure"):
-            self.assertNotIn(forbidden, source)
-        self.assertIn('active_stage: stageid', source)
-        self.assertNotIn('review_goal: reviewgoal', source)
-        self.assertNotIn('response_action: responseaction', source)
-        self.assertNotIn('"continue"', source)
-        self.assertNotIn("settimeout", source)
-        self.assertNotIn("추천", source)
-        self.assertIn('"deal"', source)
+    def test_mobile_navigation_fits_and_focus_is_visible(self):
+        css = (FRONTEND / "src/styles.css").read_text(encoding="utf-8")
+        self.assertIn("min-width: 0", css)
+        self.assertIn("focus-visible", css)
+        self.assertNotIn(".snapshot-grid", css)
 
     def test_imported_rows_survive_bridge_as_erp_import(self):
         source = (

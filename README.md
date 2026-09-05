@@ -1,10 +1,10 @@
-# 기업 수출거래 Treasury 사전점검
+# 수출거래 AI 금융진단
 
-A Company-aware Trade Treasury Pre-check for evaluating one export Deal's economics, the company's Deal-specific liquidity capacity, and currency-level FX exposure before execution.
+계약 전 수익성·회사 자금·환위험을 한 화면에서 비교합니다.
 
 The canonical product definition is [docs/product-spec.md](docs/product-spec.md).
 
-The public workflow is `거래 정보 → 회사 자금 → 시나리오 분석 → 대응안 비교 → 종합 진단`. Contract facts and current company conditions establish the base calculation; FX, funding-rate and collection-delay assumptions are applied through an explicit scenario calculation action.
+The public views are `입력 | 분석 | 보고서`, with `분석` as the default. The canonical demo presents outcomes before forms. Presets select frozen Base/Stress results; custom scenarios and response assumptions use opt-in exact-input forms. React owns navigation only, while Python owns inputs, finance and actions.
 
 ## Current state
 

@@ -134,27 +134,12 @@ def metric_by_label(app, label):
     return next(metric for metric in app.metric if metric.label == label)
 
 
-def trigger_component_review(app):
-    app.session_state["trade_treasury_experience"] = {
-        "active_stage": "result",
-        "primary_action": "run_review",
-    }
-    # Most web tests inspect the same execution's native result. Dedicated
-    # terminal-state tests below exercise the real automatic rerun contract.
-    with patch("streamlit.rerun"):
-        return app.run()
-
-
-def switch_stage(app, stage):
-    try:
-        state = dict(app.session_state["trade_treasury_experience"])
-    except KeyError:
-        state = {}
-    state["active_stage"] = stage
-    state.pop("primary_action", None)
-    app.session_state["trade_treasury_experience"] = state
+def switch_view(app, view):
+    app.session_state["trade_treasury_experience"] = {"active_view": view}
     return app.run()
 
+def visible(app):
+    return "\n".join(str(x.value) for x in (*app.markdown, *app.caption, *app.info, *app.warning, *app.error, *app.title, *app.subheader))
 
 def current_treasury_context(company_liquidity=None):
     deal = reference_deal()
@@ -246,806 +231,198 @@ class WebMvpTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def render_without_credentials(self, input_values=None):
-        with (
-            patch.dict(
-                os.environ,
-                {
-                    "EXIMBANK_AUTH_KEY": "",
-                    "KSURE_SERVICE_KEY": "",
-                    "OPENAI_API_KEY": "",
-                },
-                clear=False,
-            ),
-            patch("src.external.eximbank_fx.fetch_fx_reference") as eximbank_fetch,
-            patch("src.external.ksure_payment.fetch_payment_context") as ksure_fetch,
-            patch("src.ai.financialization.analyze_demo_documents") as openai_extract,
-            patch(
-                "src.ai.financial_statement.analyze_demo_financial_statement"
-            ) as statement_extract,
-            patch("src.ai.deal_review.run_deal_review") as deal_review,
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            for label, value in (input_values or {}).items():
-                switch_stage(
-                    app,
-                    "liquidity"
-                    if label in (
-                        "운전자금 한도 총액",
-                        "현재 사용액",
-                        "현재 실제 연 조달금리 (%)",
-                        "이번 거래에 실제 투입 가능한 회사자금 (KRW)",
-                    )
-                    else "deal" if label == "계약 회수일 (D+)" else "review",
-                )
-                next(
-                    item for item in app.number_input if item.label == label
-                ).set_value(value)
-            if input_values:
-                app.run()
-                if any(
-                    label not in (
-                        "운전자금 한도 총액",
-                        "현재 사용액",
-                        "현재 실제 연 조달금리 (%)",
-                        "이번 거래에 실제 투입 가능한 회사자금 (KRW)",
-                        "계약 회수일 (D+)",
-                    )
-                    for label in input_values
-                ):
-                    element_by_key(app.button, "calculate_scenario").click().run()
-        self.last_deal_review = deal_review
-        self.last_statement_extract = statement_extract
-        self.assertEqual(app.exception, [])
-        return app, eximbank_fetch, ksure_fetch, openai_extract
+
+    def render(self):
+        app = AppTest.from_file(Path(__file__).parents[1] / "app.py", default_timeout=30).run()
+        self.assertEqual(list(app.exception), [])
+        return app
 
     def render_with_extraction(self, result=None):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch(
-                "src.ai.financialization.analyze_demo_documents",
-                return_value=extracted_demo() if result is None else result,
-            ) as openai_extract,
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
-            element_by_key(app.button, "analyze_demo_documents").click()
-            app.run()
-            self.assertEqual(app.exception, [])
-            return app, openai_extract
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}), patch(
+            "src.ai.financialization.analyze_demo_documents",
+            return_value=result or extracted_demo(),
+        ) as extraction:
+            app = self.render()
+            switch_view(app, "setup")
+            element_by_key(app.toggle, "show_documents").set_value(True).run()
+            element_by_key(app.button, "analyze_demo_documents").click().run()
+            self.assertEqual(list(app.exception), [])
+        return app, extraction
 
-    def test_app_starts_without_api_credentials(self):
-        app, _, _, _ = self.render_without_credentials()
-        self.assertEqual(app.title[0].value, "기업 수출거래 Treasury 사전점검")
+    def test_default_analysis_has_no_inputs_or_automatic_provider_calls(self):
+        with patch("src.ai.deal_review.run_deal_review") as review, patch("src.ai.financialization.analyze_demo_documents") as document, patch("src.ai.financial_statement.analyze_demo_financial_statement") as statement, patch("src.external.ksure_payment.fetch_payment_context") as ksure, patch("src.external.eximbank_fx.fetch_fx_reference") as fx:
+            app = self.render()
+            self.assertEqual(app.title[0].value, "수출거래 AI 금융진단")
+            self.assertEqual(len(app.number_input), 0)
+            self.assertEqual(len(app.slider), 0)
+            self.assertEqual(len(app.get("bidi_component")), 1)
+            self.assertIn("현재 거래는 목표마진", visible(app))
+            for provider in (review, document, statement, ksure, fx):
+                provider.assert_not_called()
 
-    def test_react_experience_shell_mounts_without_external_or_ai_calls(self):
-        app, _, ksure_fetch, openai_extract = self.render_without_credentials()
-        shell = app.get("bidi_component")
-        self.assertEqual(len(shell), 1)
-        self.assertEqual(shell[0].key, "trade_treasury_experience")
-        ksure_fetch.assert_not_called()
-        openai_extract.assert_not_called()
-        self.last_statement_extract.assert_not_called()
-        self.last_deal_review.assert_not_called()
+    def test_all_default_views_have_zero_numeric_inputs(self):
+        app = self.render()
+        for view in ("setup", "report", "analysis"):
+            switch_view(app, view)
+            self.assertEqual(list(app.exception), [])
+            self.assertEqual(len(app.number_input), 0, view)
+            self.assertEqual(len(app.slider), 0, view)
 
-    def test_report_entry_is_result_stage_only(self):
-        app, _, _, _ = self.render_without_credentials()
-        self.assertFalse(any(item.key == "deal_report_download" for item in app.get("download_button")))
+    def test_canonical_connected_relationship_and_chart(self):
+        app = self.render()
+        text = visible(app)
+        for value in ("6,900만원", "8,900만원", "7,000만원", "1,900만원", "2026-11-03", "D+60"):
+            self.assertIn(value, text)
+        self.assertIn("funding-relationship", text)
+        self.assertTrue(app.get("vega_lite_chart"))
+        self.assertNotIn("Treasury", text)
 
-    def test_shell_remains_visible_when_company_cash_plan_is_invalid(self):
-        app, _, _, _ = self.render_without_credentials()
+    def test_presets_select_frozen_results_without_calculate_button(self):
+        app = self.render()
+        selector = element_by_key(app.radio, "selected_scenario")
+        for label, margin in (("USD -5%", "11.20%"), ("복합 악화", "8.83%"), ("기본", "14.64%")):
+            selector.set_value(label).run()
+            self.assertIn(margin, [x.value for x in app.metric])
+            self.assertEqual(len(app.number_input), 0)
+            self.assertFalse(any("계산" in x.label for x in app.button))
+
+    def test_custom_scenario_has_four_exact_fields_and_no_slider(self):
+        app = self.render()
+        element_by_key(app.radio, "selected_scenario").set_value("+ 직접 설정").run()
+        self.assertEqual(len(app.number_input), 4)
+        self.assertEqual(len(app.slider), 0)
+        element_by_key(app.number_input, "custom_usd_input").set_value(1330.0)
+        element_by_key(app.button, "FormSubmitter:custom_scenario_form-적용").click().run()
+        self.assertIn("11.20%", [x.value for x in app.metric])
+
+    def test_target_is_opt_in_exact_preference(self):
+        app = self.render()
+        element_by_key(app.toggle, "edit_target").set_value(True).run()
+        self.assertEqual(len(app.number_input), 1)
+        element_by_key(app.number_input, "target_margin_input").set_value(20.0)
+        element_by_key(app.button, "FormSubmitter:target_form-적용").click().run()
+        self.assertIn("목표마진", visible(app))
+        self.assertEqual(app.session_state["target_margin_input"], 20.0)
+        self.assertIn("14.64%", [x.value for x in app.metric])
+
+    def test_manual_fact_form_and_persistence(self):
+        app = self.render()
+        switch_view(app, "setup")
+        self.assertIn("거래 정보", visible(app))
+        element_by_key(app.toggle, "edit_deal").set_value(True).run()
+        element_by_key(app.number_input, "sale_amount_input").set_value(110000.0)
+        element_by_key(app.button, "FormSubmitter:deal_form-변경사항 적용").click().run()
+        switch_view(app, "analysis")
+        self.assertEqual(app.session_state["sale_amount_input"], 110000.0)
+        self.assertEqual(list(app.exception), [])
+        self.assertNotEqual(app.metric[0].value, "14.64%")
+
+    def test_company_form_reuses_credit_line_and_changes_residual(self):
+        app = self.render()
+        switch_view(app, "setup")
+        element_by_key(app.toggle, "edit_company").set_value(True).run()
+        element_by_key(app.number_input, "credit_total_limit_input").set_value(110000000.0)
+        element_by_key(app.button, "FormSubmitter:company_form-변경사항 적용").click().run()
+        switch_view(app, "analysis")
+        self.assertIn("900만원", visible(app))
+        self.assertEqual(app.session_state["credit_used_amount_input"], 30000000.0)
+
+    def test_cash_plan_persists_when_editor_unmounted(self):
+        app = self.render()
+        switch_view(app, "setup")
+        element_by_key(app.toggle, "edit_cash_plan").set_value(True).run()
+        rows = list(app.session_state["company_cash_plan_rows"])
+        self.assertIn("ERP 파일 가져오기", [x.label for x in app.tabs])
+        switch_view(app, "analysis")
+        self.assertEqual(app.session_state["company_cash_plan_rows"], rows)
+        self.assertIn("8,900만원", visible(app))
+
+    def test_invalid_cash_plan_keeps_shell_and_blocks_review(self):
+        app = self.render()
         rows = list(app.session_state["company_cash_plan_rows"])
         rows[0] = {**rows[0], "참조": ""}
         app.session_state["company_cash_plan_rows"] = rows
         app.run()
         self.assertEqual(len(app.get("bidi_component")), 1)
+        switch_view(app, "report")
+        self.assertTrue(element_by_key(app.button, "run_review").disabled)
 
-    def test_default_reference_deal_renders_without_exception(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "review")
-        labels = {metric.label: metric.value for metric in app.metric}
-        self.assertEqual(app.metric[0].label, "실제로 남는 마진")
-        self.assertEqual(app.metric[0].value, "14.64%")
-        self.assertEqual(labels["현재 분석 환율"], "1,400원")
-        self.assertEqual(labels["목표마진 유지선"], "1,386.47원")
-        self.assertNotIn("거래 최대 자금소요", labels)
+    def test_response_before_after_delta_and_principal_boundary(self):
+        app = self.render()
+        labels = [x.label for x in app.metric]
+        for label in ("현재", "대안", "변화"):
+            self.assertIn(label, labels)
+        self.assertIn("D+65", [x.value for x in app.metric])
+        self.assertIn("4,200만원", [x.value for x in app.metric])
+        self.assertIn("총 은행원금", visible(app))
+        self.assertIn("줄어드는 것은 아닙니다", visible(app))
 
-    def test_canonical_usd_stress_is_below_fourteen_percent_target(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "review")
-        message = next(
-            item.value for item in app.error if "달러 -5% Stress" in item.value
-        )
-        self.assertIn("마진 11.20% · 목표 미달", message)
+    def test_receivable_edit_only_required_fields(self):
+        app = self.render()
+        element_by_key(app.toggle, "edit_receivable").set_value(True).run()
+        self.assertEqual(len(app.number_input), 3)
+        element_by_key(app.number_input, "receivable_purchase_day_input").set_value(60)
+        element_by_key(app.button, "FormSubmitter:receivable_form-적용").click().run()
+        self.assertIn("D+60", [x.value for x in app.metric])
+        self.assertEqual(list(app.exception), [])
 
-    def test_usd_stress_meets_ten_percent_target(self):
-        app, _, _, _ = self.render_without_credentials({"목표 마진 (%)": 10.0})
-        message = next(
-            item.value for item in app.success if "달러 -5% Stress" in item.value
-        )
-        self.assertIn("마진 11.20% · ✓ 목표 충족", message)
+    def test_usance_edit_recalculates_existing_comparison(self):
+        app = self.render()
+        element_by_key(app.toggle, "edit_usance").set_value(True).run()
+        element_by_key(app.number_input, "usance_repayment_day_input").set_value(100)
+        element_by_key(app.button, "FormSubmitter:usance_form-적용").click().run()
+        self.assertEqual(list(app.exception), [])
+        self.assertNotIn("54.94만원", [x.value for x in app.metric])
 
-    def test_below_threshold_fx_is_not_described_as_available_buffer(self):
-        app, _, _, _ = self.render_without_credentials({"USD/KRW": 1300.0})
-        visible = "\n".join(item.value for item in (*app.markdown, *app.info))
-        self.assertIn("마진 14.64% →", visible)
-        self.assertNotIn("현재 여유 -", visible)
+    def test_report_output_only_and_no_ai_prerequisite(self):
+        app = self.render()
+        switch_view(app, "report")
+        self.assertTrue(app.get("download_button"))
+        self.assertIn("14.64%", visible(app))
+        self.assertIn("이 조건으로 거래 검토", [x.label for x in app.button])
+        self.assertEqual(len(app.number_input), 0)
 
-    def test_decision_first_information_hierarchy(self):
-        app, _, _, _ = self.render_without_credentials()
-        self.assertEqual(element_by_key(app.radio, "deal_input_mode").options,
-                         ["직접 입력", "거래서류 불러오기"])
-        self.assertTrue(any(item.key == "sale_amount_input" for item in app.number_input))
-        self.assertFalse(any(item.key == "target_margin_input" for item in app.number_input))
-        switch_stage(app, "review")
-        self.assertTrue(any(item.key == "target_margin_input" for item in app.number_input))
-        self.assertFalse(any(item.key == "sale_amount_input" for item in app.number_input))
-        self.assertIn("기본 결과와 변경 시나리오", [item.value for item in app.subheader])
-        self.assertTrue(any(item.key == "calculate_scenario" for item in app.button))
-        self.assertTrue(any("시나리오를 계산하세요" in item.value for item in app.info))
-        switch_stage(app, "liquidity")
-        labels = [item.label for item in app.number_input]
-        self.assertIn("현재 실제 연 조달금리 (%)", labels)
-        self.assertIn("이번 거래에 실제 투입 가능한 회사자금 (KRW)", labels)
-        self.assertTrue(any(item.key == "calculate_base_diagnosis" for item in app.button))
-
-    def test_company_cash_plan_timeline_is_visible_and_confirmed_only(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "liquidity")
-        headings = [item.value for item in app.subheader]
-        self.assertIn("회사의 실제 자금 흐름을 확인합니다", headings)
-        self.assertEqual([item.label for item in app.tabs], ["직접 입력", "ERP 파일 가져오기"])
-        self.assertFalse(
-            next(
-                item
-                for item in app.checkbox
-                if item.label == "EXPECTED 자금계획 포함 시나리오 보기"
-            ).value
-        )
-        metrics = {item.label: item.value for item in app.metric}
-        self.assertEqual(metrics["현재 가용현금"], "1억 2,000만원")
-        self.assertEqual(metrics["최소 운영자금"], "7,000만원")
-        self.assertEqual(metrics["현재 Buffer 초과 유동성"], "+5,000만원")
-        self.assertEqual(metrics["거래 단독 필요 외부자금"], "6,900만원")
-        self.assertEqual(
-            metrics["회사 전체 최대 자금부족"],
-            "8,900만원",
-        )
-        self.assertEqual(metrics["현재 미사용 운전자금 한도"], "7,000만원")
-        visible = "\n".join(
-            item.value
-            for item in (*app.markdown, *app.caption, *app.info, *app.error)
-        )
-        for text in (
-            "가상·데모·fictional 자금계획",
-            "실시간 ERP 연결이 아닙니다",
-            "기본 결과는 CONFIRMED만 포함합니다",
-            "현재 입력 한도 초과 · 한도 부족 1,900만원",
-            "2026-11-03 (D+60)",
-            "거래 단독 배정자금과 회사 전체 현재 현금",
-        ):
-            self.assertIn(text, visible)
-
-    def test_canonical_rescue_boundaries_are_visible(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "review")
-        visible = "\n".join(
-            item.value
-            for item in (*app.markdown, *app.metric, *app.caption, *app.error)
-        )
-        self.assertIn(
-            "이 거래를 목표 수준으로 만들려면?",
-            [item.value for item in app.subheader],
-        )
-        self.assertIn("8.83%", visible)
-        self.assertIn("최소 USD 106,017", visible)
-        self.assertIn("최대 USD 14,898", visible)
-        self.assertIn("최대 JPY 2,314,602", visible)
-        self.assertIn("결제기간 단축만으로는", visible)
-        self.assertIn("조달금리 인하만으로는", visible)
-
-    def test_lower_target_hides_rescue_cards(self):
-        app, _, _, _ = self.render_without_credentials({"목표 마진 (%)": 8.0})
-        visible = "\n".join(
-            item.value for item in (*app.markdown, *app.metric, *app.success)
-        )
-        self.assertIn("추가 목표마진 충족 조건 계산이 필요하지 않습니다", visible)
-        self.assertNotIn("최소 USD 106,017", visible)
-
-    def test_report_download_is_available_without_credentials(self):
-        app, _, _, _ = self.render_without_credentials()
-        app.session_state["trade_treasury_experience"] = {
-            "active_stage": "result",
-        }
-        app.run()
-        switch_stage(app, "result")
-        self.assertEqual(
-            metric_by_label(app, "생성 기준").value,
-            "현재 거래 입력 기반 분석",
-        )
-        report_button = element_by_key(
-            app.get("download_button"), "deal_report_download"
-        )
-        self.assertEqual(report_button.label, "Treasury 사전점검 보고서 다운로드")
-        self.assertTrue(report_button.proto.url.endswith(".pdf"))
-
-    def test_external_apis_are_not_invoked_on_initial_render(self):
-        _, eximbank_fetch, ksure_fetch, openai_extract = self.render_without_credentials()
-        eximbank_fetch.assert_not_called()
-        ksure_fetch.assert_not_called()
-        openai_extract.assert_not_called()
-        self.last_statement_extract.assert_not_called()
-        self.last_deal_review.assert_not_called()
-
-    def test_financial_statement_section_is_bounded_and_explicit(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "liquidity")
-        self.assertIn("회사 자금상태", [item.value for item in app.subheader])
-        self.assertIn("샘플 재무제표 읽기", [item.label for item in app.button])
-        visible = "\n".join(item.value for item in (*app.markdown, *app.caption))
-        self.assertIn("가상 재무제표 · 실제 기업 자료 아님", visible)
-        self.last_statement_extract.assert_not_called()
-
-    def test_company_funding_capacity_and_choices_are_visible(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "liquidity")
-        labels = {item.label: item.value for item in app.metric}
-        self.assertEqual(labels["미사용 한도"], "7,000만원")
-        switch_stage(app, "treasury")
-        headings = [item.value for item in app.subheader]
-        self.assertNotIn("회사 자금으로 대금 회수일까지 버틸 수 있을까요?", headings)
-        self.assertIn("매출채권 조기 현금화", headings)
-        number_labels = [item.label for item in app.number_input]
-        self.assertIn("운전자금 한도 총액", number_labels)
-        self.assertIn("현재 사용액", number_labels)
-        self.assertEqual(number_labels.count("실제 연 조달금리 (%)"), 0)
-        visible = "\n".join(
-            item.value
-            for item in (*app.markdown, *app.success, *app.error, *app.info, *app.caption)
-        )
-        self.assertIn("현재 입력 기준 한도 내 · 한도 여유 100만원", visible)
-        self.assertIn("현재 입력 한도 초과 · 한도 부족 30만원", visible)
-        self.assertIn("회사자금만으로 기다리기", visible)
-        self.assertIn("D+90에 입금받기 · 기존 운전자금 한도", visible)
-        self.assertIn("매출채권 먼저 현금화하기", visible)
-        self.assertIn("**최대 은행 필요액**  6,900만원", visible)
-        self.assertIn("최대 자금부족이 D+60", visible)
-        self.assertIn("매출채권 현금화는 D+65", visible)
-        self.assertIn("기존 Deal Margin 엔진에는 자동 반영하지 않습니다", visible)
-
-    def test_sixty_million_unused_line_blocks_wait_and_purchase(self):
-        app, _, _, _ = self.render_without_credentials(
-            {"운전자금 한도 총액": 90000000.0, "현재 사용액": 30000000.0}
-        )
-        switch_stage(app, "treasury")
-        visible = "\n".join(item.value for item in (*app.markdown, *app.error))
-        self.assertGreaterEqual(visible.count("**부족**  900만원"), 2)
-
-    def test_bankers_usance_comparison_is_visible_and_bounded(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "treasury")
-        headings = [item.value for item in app.subheader]
-        self.assertIn("수입대금 지급을 은행 신용으로 늦춰보면?", headings)
-        payable_input = next(
-            item for item in app.selectbox if item.label == "대상 외화 지급"
-        )
-        self.assertIn("JPY 3,000,000 · 공급자 지급 D+30", payable_input.options)
-        values = {item.label: item.value for item in app.number_input}
-        self.assertEqual(values["회사 상환일 (D+)"], 90)
-        self.assertEqual(values["Usance 연 금리 (%)"], 4.8)
-        self.assertEqual(values["Usance 수수료율 (%)"], 0.15)
-        visible = "\n".join(
-            item.value
-            for item in (
-                *app.markdown,
-                *app.caption,
-                *app.info,
-                *app.metric,
-            )
-        )
-        for text in (
-            "Banker's Usance 시뮬레이션 · 승인/실행 아님",
-            "**일반 운전자금 피크**  6,900만원",
-            "**일반 운전자금 피크**  4,200만원",
-            "**일반 운전자금 한도 여유**  100만원",
-            "**일반 운전자금 한도 여유**  2,800만원",
-            "**Usance 원금**  2,700만원",
-            "**Usance 이자**  약 21.3만원",
-            "**Usance 수수료**  4.05만원",
-            "**총 금융비용**  약 54.94만원",
-            "일반 운전자금 한도 사용은 줄지만",
-            "승인·실행은 포함하지 않습니다",
-            "환위험이 자동으로 없어지는 것은 아닙니다",
-        ):
-            self.assertIn(text, visible)
-        self.assertGreaterEqual(visible.count("6,900만원"), 3)
-        self.assertIn("-2,700만원", [item.value for item in app.metric])
-        self.assertIn("4.05만원", visible)
-        self.last_statement_extract.assert_not_called()
-        self.last_deal_review.assert_not_called()
-
-    def test_fx_treasury_positions_and_hedge_overlay_are_visible(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "treasury")
-        headings = [item.value for item in app.subheader]
-        self.assertIn("외화는 어느 방향으로 위험할까요?", headings)
-        self.assertIn("환율을 열어둘까, 일부 고정할까?", headings)
-        input_labels = [item.label for item in app.number_input]
-        for label in (
-            "USD 선물환 매도환율",
-            "USD 헤지비율 (%)",
-            "JPY 선물환 매수환율 (100 JPY)",
-            "JPY 헤지비율 (%)",
-            "정산 시 가정 USD/KRW",
-            "정산 시 가정 JPY/KRW (100 JPY)",
-        ):
-            self.assertIn(label, input_labels)
-        visible = "\n".join(
-            item.value
-            for item in (
-                *app.markdown,
-                *app.caption,
-                *app.warning,
-                *app.success,
-                *app.error,
-            )
-        )
-        self.assertIn("**통화 기준 상계 가능액**  USD 20,000", visible)
-        self.assertIn("**순수취 노출**  USD 80,000", visible)
-        self.assertIn("**순지급 노출**  JPY 3,000,000", visible)
-        self.assertIn("USD 지급 D+30 · 수취 D+90", visible)
-        self.assertIn("**고정한 금액**  USD 64,000", visible)
-        self.assertIn("**남은 노출**  USD 16,000", visible)
-        self.assertIn("**고정한 금액**  JPY 2,400,000", visible)
-        self.assertIn("**남은 노출**  JPY 600,000", visible)
-        self.assertIn("**선물환 정산효과**  -44만원", visible)
-        self.assertIn("**선물환 정산효과**  +620만원", visible)
-        self.assertIn("**헤지 전 마진**  9.16%", visible)
-        self.assertIn("**선물환 overlay 마진**  13.82%", visible)
-        self.assertIn("현재 입력 기준 · 목표 미달", visible)
-        self.assertIn("파생상품 정산에 따른 차입일정 재계산은 포함하지 않습니다", visible)
-        self.last_statement_extract.assert_not_called()
-        self.last_deal_review.assert_not_called()
-
-    def test_explicit_statement_cta_renders_normalized_profile_without_changing_deal_cash(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch(
-                "src.ai.financial_statement.analyze_demo_financial_statement",
-                return_value=extracted_statement(),
-            ) as statement_extract,
-            patch("src.ai.financialization.analyze_demo_documents"),
-            patch("src.ai.deal_review.run_deal_review"),
-            patch("src.external.ksure_payment.fetch_payment_context"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            switch_stage(app, "liquidity")
-            element_by_key(app.button, "analyze_financial_statement").click()
+    def test_agent_success_settles_once_and_preserves_current_run(self):
+        app = self.render()
+        switch_view(app, "report")
+        with patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review:
+            element_by_key(app.button, "run_review").click().run()
+            self.assertEqual(list(app.exception), [])
+            self.assertEqual(app.session_state["deal_review_run"], review_result())
+            self.assertIn(review_result().memo.headline, visible(app))
+            self.assertFalse(any("조건이 바뀌었습니다" in x.value for x in app.warning))
             app.run()
-            switch_stage(app, "liquidity")
-        self.assertEqual(app.exception, [])
-        statement_extract.assert_called_once()
-        labels = {metric.label: metric.value for metric in app.metric}
-        self.assertEqual(labels["현금 및 현금성자산"], "1억 2,000만원")
-        self.assertEqual(labels["단기금융상품"], "3,000만원")
-        self.assertEqual(labels["유동자산"], "6억 5,000만원")
-        self.assertEqual(labels["유동부채"], "4억 7,000만원")
-        self.assertEqual(labels["단기차입금"], "1억 6,000만원")
-        self.assertEqual(labels["영업활동현금흐름"], "8,500만원")
-        self.assertEqual(labels["현재 거래 입력상 회사 투입가능자금"], "5,000만원")
-        visible = "\n".join(
-            item.value for item in (*app.markdown, *app.info, *app.caption)
-        )
-        self.assertIn("재무제표상 현금 ≠ 이 거래에 투입 가능한 자금", visible)
-        self.assertNotIn("이익잉여금", visible)
-        switch_stage(app, "liquidity")
-        self.assertEqual(
-            next(
-                item
-                for item in app.number_input
-                if item.label == "이번 거래에 실제 투입 가능한 회사자금 (KRW)"
-            ).value,
-            50000000.0,
-        )
-
-    def test_agent_is_visible_and_normal_rerun_does_not_call_it(self):
-        app, _, _, _ = self.render_without_credentials()
-        self.assertIn("trade_treasury_experience", app.session_state)
-        self.assertFalse(any(button.key == "run_deal_review" for button in app.button))
-        with patch("src.ai.deal_review.run_deal_review") as review:
-            app.run()
-        review.assert_not_called()
-
-    def test_invalid_required_treasury_input_blocks_agent_before_openai(self):
-        app, _, _, _ = self.render_without_credentials(
-            {
-                "운전자금 한도 총액": 20000000.0,
-                "현재 사용액": 30000000.0,
-            }
-        )
-        self.last_deal_review.assert_not_called()
-        self.assertFalse(any(button.key == "run_deal_review" for button in app.button))
-
-    def test_explicit_agent_cta_renders_current_deterministic_evidence_and_trace(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            trigger_component_review(app)
-        self.assertEqual(app.exception, [])
         review.assert_called_once()
-        visible = "\n".join(
-            item.value
-            for item in (*app.markdown, *app.info, *app.warning)
-        )
-        self.assertNotIn("조건이 변경되어 다시 검토가 필요합니다", visible)
-        self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
-        self.assertIn("먼저 확인할 Treasury 이슈", visible)
-        self.assertIn("함께 본 근거", visible)
-        self.assertIn("마진 8.83% · 목표 미달", visible)
-        self.assertIn("회사 전체 유동성과 운전자금 한도", visible)
-        self.assertEqual(visible.count("회사 전체 유동성과 운전자금 한도"), 1)
-        self.assertIn("현재 1,400.00원", visible)
-        self.assertIn("현재 거래 분석", visible)
-        self.assertIn("Stress / 목표마진 충족 조건", visible)
-        self.assertIn("회사 자금 / 자금조달 / 외화위험", visible)
-        self.assertIn("K-SURE 결제 참고정보 · 불러온 공식 데이터 없음", visible)
+        context = review.call_args.kwargs["treasury_context"]
+        self.assertEqual(context.company_cash_timeline.company_with_deal.peak_liquidity_gap_krw, Decimal("89000000"))
+        self.assertIn("요청 횟수: 2", visible(app))
 
-    def test_review_terminal_success_rerun_settles_shell_without_repeating_agent(self):
-        shell_data = []
-
-        def shell_once(data):
-            shell_data.append(data)
-            return {"primary_action": "run_review"} if len(shell_data) == 1 else {}
-
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
-            patch(
-                "components.trade_treasury_experience.trade_treasury_experience",
-                side_effect=shell_once,
-            ),
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10)
-            app.session_state["trade_treasury_experience"] = {
-                "active_stage": "result",
-            }
+    def test_agent_error_settles_without_retry(self):
+        app = self.render()
+        switch_view(app, "report")
+        with patch("src.ai.deal_review.run_deal_review", side_effect=DealReviewError("안전한 오류")) as review:
+            element_by_key(app.button, "run_review").click().run()
             app.run()
-
         review.assert_called_once()
-        self.assertEqual(app.session_state["deal_review_run"], review_result())
-        self.assertGreaterEqual(len(shell_data), 2)
-        self.assertTrue(shell_data[-1]["reviewState"]["hasResult"])
-        self.assertTrue(shell_data[-1]["reviewState"]["current"])
-        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
-        self.assertIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
-        self.assertNotIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
-        self.assertNotIn("거래 검토 결과를 준비하고 있습니다", visible)
+        self.assertIn("AI 거래 검토를 완료하지 못했습니다.", visible(app))
 
-    def test_review_terminal_error_rerun_settles_without_retry(self):
-        shell_data = []
-
-        def shell_once(data):
-            shell_data.append(data)
-            return {"primary_action": "run_review"} if len(shell_data) == 1 else {}
-
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch(
-                "src.ai.deal_review.run_deal_review",
-                side_effect=DealReviewError("AI 거래 검토를 완료하지 못했습니다."),
-            ) as review,
-            patch(
-                "components.trade_treasury_experience.trade_treasury_experience",
-                side_effect=shell_once,
-            ),
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10)
-            app.session_state["trade_treasury_experience"] = {
-                "active_stage": "result",
-            }
+    def test_changed_base_stales_agent_without_another_call(self):
+        app = self.render()
+        switch_view(app, "report")
+        with patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review:
+            element_by_key(app.button, "run_review").click().run()
+            app.session_state["sale_amount_input"] = 110000.0
             app.run()
-
         review.assert_called_once()
-        self.assertGreaterEqual(len(shell_data), 2)
-        self.assertEqual(
-            shell_data[-1]["reviewState"]["error"],
-            "AI 거래 검토를 완료하지 못했습니다.",
-        )
-        self.assertEqual(
-            app.session_state["deal_review_error"],
-            "AI 거래 검토를 완료하지 못했습니다.",
-        )
-    def test_changed_deal_marks_agent_result_stale_without_another_call(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            trigger_component_review(app)
-            switch_stage(app, "review")
-            next(item for item in app.number_input if item.label == "목표 마진 (%)").set_value(13.0)
-            app.run()
-            switch_stage(app, "result")
-        review.assert_called_once()
-        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
-        self.assertIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
-        self.assertNotIn("복합 상황에서 계약조건 점검이 필요합니다", visible)
+        self.assertTrue(any("조건" in x.value for x in app.warning))
+        self.assertNotIn(review_result().memo.headline, visible(app))
 
-    def test_restoring_inputs_does_not_repeat_agent_call(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            trigger_component_review(app)
-            switch_stage(app, "review")
-            target = next(
-                item for item in app.number_input if item.label == "목표 마진 (%)"
-            )
-            target.set_value(13.0)
-            app.run()
-            target = next(
-                item for item in app.number_input if item.label == "목표 마진 (%)"
-            )
-            target.set_value(14.0)
-            app.run()
-            switch_stage(app, "result")
-        review.assert_called_once()
-        visible = "\n".join(item.value for item in (*app.markdown, *app.warning))
-        self.assertNotIn("기존 AI 검토는 현재 상태와 일치하지 않습니다", visible)
-
-    def test_each_treasury_input_stales_and_exact_restore_recovers_without_ai_call(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch("src.ai.deal_review.run_deal_review", return_value=review_result()) as review,
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            trigger_component_review(app)
-            changes = (
-                ("credit_total_limit_input", 101000000.0, 100000000.0),
-                ("receivable_purchase_day_input", 66, 65),
-                ("usd_hedge_ratio_input", 75.0, 80.0),
-                ("settlement_usd_krw_input", 1329.0, 1330.0),
-                ("usance_repayment_day_input", 91, 90),
-            )
-            for key, changed, original in changes:
-                switch_stage(app, "treasury")
-                widget = element_by_key(app.number_input, key)
-                widget.set_value(changed)
-                app.run()
-                switch_stage(app, "result")
-                stale = "\n".join(
-                    item.value for item in (*app.markdown, *app.warning)
-                )
-                self.assertIn(
-                    "기존 AI 검토는 현재 상태와 일치하지 않습니다", stale
-                )
-
-                switch_stage(app, "treasury")
-                widget = element_by_key(app.number_input, key)
-                widget.set_value(original)
-                app.run()
-                switch_stage(app, "result")
-                current = "\n".join(
-                    item.value for item in (*app.markdown, *app.warning)
-                )
-                self.assertNotIn(
-                    "기존 AI 검토는 현재 상태와 일치하지 않습니다", current
-                )
-
-        review.assert_called_once()
-
-    def test_company_liquidity_signal_renders_only_from_loaded_statement_profile(self):
-        profile = build_company_liquidity_profile(extracted_statement())
-        loaded_run = review_result(
-            treasury_context=current_treasury_context(profile)
-        )
-        loaded_run = replace(
-            loaded_run,
-            memo=DealReviewMemo(
-                headline="회사 자금 맥락을 함께 확인합니다",
-                summary="재무제표상 현금과 거래 배정자금의 차이를 구분해 봐야 합니다.",
-                treasury_focus=TreasuryFocus.CREDIT_LINE_CAPACITY,
-                supporting_signals=(SupportingSignal.COMBINED_STRESS,),
-                negotiation_focus=(),
-            ),
-        )
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch(
-                "src.ai.financial_statement.analyze_demo_financial_statement",
-                return_value=extracted_statement(),
-            ) as statement_ai,
-            patch("src.ai.deal_review.run_deal_review", return_value=loaded_run) as review,
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            switch_stage(app, "liquidity")
-            element_by_key(app.button, "analyze_financial_statement").click()
-            app.run()
-            trigger_component_review(app)
-
-        statement_ai.assert_called_once()
-        review.assert_called_once()
-        visible = "\n".join(
-            item.value for item in (*app.markdown, *app.info, *app.caption)
-        )
-        self.assertIn("재무제표상 현금 및 현금성자산", visible)
-        self.assertIn("재무제표상 현금은 Deal 투입가능자금과 동일하지 않습니다", visible)
-
-    def test_loaded_ksure_context_renders_automatically_after_agent_result(self):
-        context = PaymentContext(
-            country_code="450",
-            industry_major_code="29",
-            last_update_date=date(2026, 8, 1),
-            reference_year=2025,
-            average_payment_period_days=Decimal("62.4"),
-            late_payment_rate_percent=Decimal("8.1"),
-            average_late_payment_period_days=Decimal("13.7"),
-            payment_terms=(),
-            payment_period_distribution=(),
-        )
-        loaded_run = review_result(payment_context=context)
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch("src.ai.deal_review.run_deal_review", return_value=loaded_run) as review,
-            patch("src.external.ksure_payment.fetch_payment_context") as fetch,
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            app.session_state["ksure_payment_context"] = context
-            switch_stage(app, "review")
-            trigger_component_review(app)
-
-        review.assert_called_once()
-        fetch.assert_not_called()
-        visible = "\n".join(
-            item.value for item in (*app.markdown, *app.info, *app.warning)
-        )
-        self.assertIn("공식 결제 참고정보", visible)
-        self.assertIn("평균 결제기간 62.4일", visible)
-        self.assertIn("개별 바이어 예측 아님", visible)
-
-    def test_loaded_ksure_context_is_available_without_agent_or_ksure_fetch(self):
-        context = PaymentContext(
-            country_code="450",
-            industry_major_code="29",
-            last_update_date=date(2026, 8, 1),
-            reference_year=2025,
-            average_payment_period_days=Decimal("62.4"),
-            late_payment_rate_percent=Decimal("8.1"),
-            average_late_payment_period_days=Decimal("13.7"),
-            payment_terms=(),
-            payment_period_distribution=(),
-        )
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch("src.ai.deal_review.run_deal_review") as review,
-            patch("src.external.ksure_payment.fetch_payment_context") as fetch,
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            app.session_state["ksure_payment_context"] = context
-            app.run()
-        review.assert_not_called()
-        fetch.assert_not_called()
-        self.assertEqual(app.session_state["ksure_payment_context"], context)
-
-    def test_public_market_surface_is_ksure_only(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "review")
-        button_labels = [item.label for item in app.button]
-        self.assertIn("K-SURE 결제정보 불러오기", button_labels)
-        self.assertNotIn("공식 기준환율 불러오기", button_labels)
-        self.assertNotIn("현재 거래에 적용", button_labels)
-        self.assertEqual(
-            [item.label for item in app.date_input],
-            [],
-        )
-
-    def test_collection_day_updates_receivable_comparison_label(self):
-        app, _, _, _ = self.render_without_credentials({"계약 회수일 (D+)": 120})
-        switch_stage(app, "treasury")
-        visible = "\n".join(item.value for item in app.markdown)
-        self.assertIn("D+120에 입금받기", visible)
-        self.assertNotIn("90일 뒤 입금받기", visible)
-
-    def test_report_generated_at_uses_seoul_timezone(self):
-        with (
-            patch.dict(
-                os.environ,
-                {"KSURE_SERVICE_KEY": "", "OPENAI_API_KEY": ""},
-                clear=False,
-            ),
-            patch(
-                "src.reporting.deal_report.build_deal_report",
-                return_value=b"%PDF-1.4",
-            ) as build_report,
-            patch("src.external.ksure_payment.fetch_payment_context"),
-            patch("src.ai.financialization.analyze_demo_documents"),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-        self.assertEqual(app.exception, [])
-        generated_at = build_report.call_args.args[0].generated_at
-        self.assertEqual(generated_at.tzinfo, ZoneInfo("Asia/Seoul"))
-
-    def test_missing_credentials_do_not_prevent_deterministic_analysis(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "review")
-        self.assertTrue(any("목표 충족" in message.value for message in app.success))
-        self.assertGreaterEqual(len(app.dataframe), 1)
-
-    def test_ai_section_safely_reports_missing_key(self):
-        app, _, _, _ = self.render_without_credentials()
-        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
-            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
-        self.assertTrue(
-            any("OPENAI_API_KEY" in message.value for message in app.info)
-        )
-
-    def test_mocked_extraction_displays_money_flow_and_exposure(self):
-        app, openai_extract = self.render_with_extraction()
-        visible = "\n".join(item.value for item in (*app.markdown, *app.caption))
-        self.assertIn("USD 100,000", visible)
-        self.assertIn("USD 20,000", visible)
-        self.assertIn("JPY 3,000,000", visible)
-        self.assertIn("순노출 +80,000", visible)
-        self.assertIn("순노출 -3,000,000", visible)
-        self.assertEqual(
-            metric_by_label(app, "생성 기준").value,
-            "AI 분석 결과 존재 · 현재 거래에는 미반영",
-        )
-        openai_extract.assert_called_once()
-
-    def test_proposal_does_not_change_deal_before_apply(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch(
-                "src.ai.financialization.analyze_demo_documents",
-                return_value=extracted_demo(),
-            ),
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            sale_input = element_by_key(app.number_input, "sale_amount_input")
-            sale_input.set_value(90000.0)
-            app.run()
-            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
-            element_by_key(app.button, "analyze_demo_documents").click()
-            app.run()
-            element_by_key(app.radio, "deal_input_mode").set_value("직접 입력").run()
-            self.assertEqual(
-                element_by_key(app.number_input, "sale_amount_input").value,
-                90000.0,
-            )
+    def test_document_extraction_remains_explicit_and_confirmed(self):
+        app, extract = self.render_with_extraction()
+        extract.assert_called_once()
+        self.assertIn("USD 100,000", visible(app))
+        self.assertEqual(app.session_state["sale_amount_input"], 100000.0)
+        self.assertTrue(element_by_key(app.button, "apply_ai_proposal").disabled)
 
     def test_unsupported_currency_blocks_apply(self):
         eur = FinancialEvent(
@@ -1068,80 +445,6 @@ class WebMvpTests(unittest.TestCase):
         apply_button = element_by_key(app.button, "apply_ai_proposal")
         self.assertTrue(apply_button.disabled)
 
-    def test_confirmed_proposal_updates_only_safe_inputs(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch(
-                "src.ai.financialization.analyze_demo_documents",
-                return_value=extracted_demo(),
-            ) as openai_extract,
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            element_by_key(app.number_input, "sale_amount_input").set_value(90000.0)
-            app.run()
-            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
-            element_by_key(app.button, "analyze_demo_documents").click()
-            app.run()
-            element_by_key(app.checkbox, "ai_hedge_confirmation").check()
-            app.run()
-            element_by_key(app.button, "apply_ai_proposal").click()
-            app.run()
-
-        element_by_key(app.radio, "deal_input_mode").set_value("직접 입력").run()
-        self.assertEqual(
-            element_by_key(app.number_input, "sale_amount_input").value,
-            100000.0,
-        )
-        self.assertEqual(
-            element_by_key(app.number_input, "collection_day_input").value,
-            90,
-        )
-        self.assertEqual(
-            element_by_key(app.number_input, "usd_payable_day_input").value,
-            30,
-        )
-        self.assertEqual(
-            app.session_state["ai_applied_patch"],
-            app.session_state["ai_proposed_patch"],
-        )
-        switch_stage(app, "result")
-        self.assertEqual(
-            metric_by_label(app, "생성 기준").value,
-            "거래서류 AI 추출값 일부 반영",
-        )
-        openai_extract.assert_called_once()
-
-    def test_edit_after_ai_apply_updates_current_provenance_without_openai(self):
-        with (
-            patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False),
-            patch(
-                "src.ai.financialization.analyze_demo_documents",
-                return_value=extracted_demo(),
-            ) as openai_extract,
-        ):
-            app_path = Path(__file__).resolve().parents[1] / "app.py"
-            app = AppTest.from_file(app_path, default_timeout=10).run()
-            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
-            element_by_key(app.button, "analyze_demo_documents").click()
-            app.run()
-            element_by_key(app.checkbox, "ai_hedge_confirmation").check()
-            app.run()
-            element_by_key(app.button, "apply_ai_proposal").click()
-            app.run()
-            applied_snapshot = app.session_state["ai_applied_patch"]
-            element_by_key(app.radio, "deal_input_mode").set_value("직접 입력").run()
-            element_by_key(app.number_input, "sale_amount_input").set_value(150000.0)
-            app.run()
-
-        self.assertEqual(app.session_state["ai_applied_patch"], applied_snapshot)
-        switch_stage(app, "result")
-        self.assertEqual(
-            metric_by_label(app, "생성 기준").value,
-            "AI 추출값 반영 후 현재 거래에서 일부 값 수정",
-        )
-        openai_extract.assert_called_once()
-
     def test_ordinary_rerun_reuses_extraction_without_openai_call(self):
         app, _ = self.render_with_extraction()
         with (
@@ -1150,54 +453,6 @@ class WebMvpTests(unittest.TestCase):
         ):
             app.run()
         rerun_extract.assert_not_called()
-
-    def test_scenario_slider_exact_and_stage_roundtrip_share_current_value(self):
-        app, _, _, _ = self.render_without_credentials()
-        with patch("src.ai.deal_review.run_deal_review") as review:
-            switch_stage(app, "review")
-            element_by_key(app.slider, "target_margin_input_slider").set_value(15.0).run()
-            self.assertEqual(element_by_key(app.number_input, "target_margin_input").value, 15.0)
-            self.assertEqual(metric_by_label(app, "목표 마진").value, "14.00%")
-            self.assertTrue(any("아직 계산하지 않음" in item.value for item in app.warning))
-            element_by_key(app.number_input, "usd_krw_input").set_value(1330.0).run()
-            self.assertEqual(metric_by_label(app, "실제로 남는 마진").value, "14.64%")
-            element_by_key(app.button, "calculate_scenario").click().run()
-            self.assertEqual(metric_by_label(app, "목표 마진").value, "15.00%")
-            self.assertTrue(any("마진 14.64% →" in item.value for item in app.info))
-            element_by_key(app.button, "usd_krw_input_기준").click().run()
-            self.assertTrue(any("아직 계산하지 않음" in item.value for item in app.warning))
-            switch_stage(app, "liquidity")
-            switch_stage(app, "review")
-            self.assertEqual(element_by_key(app.number_input, "target_margin_input").value, 15.0)
-            self.assertEqual(element_by_key(app.number_input, "usd_krw_input").value, 1400.0)
-            self.assertEqual(len(app.sidebar.number_input), 0)
-        review.assert_not_called()
-
-    def test_company_credit_reacts_and_timeline_chart_uses_current_data(self):
-        app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "liquidity")
-        self.assertEqual(len(app.get("vega_lite_chart")), 1)
-        element_by_key(app.number_input, "credit_total_limit_input").set_value(110000000.0).run()
-        visible = "\n".join(item.value for item in (*app.error, *app.markdown))
-        self.assertIn("900만원", visible)
-        self.assertEqual(metric_by_label(app, "회사 전체 최대 자금부족").value, "8,900만원")
-        switch_stage(app, "treasury")
-        self.assertEqual(element_by_key(app.number_input, "credit_total_limit_input").value, 110000000.0)
-
-    def test_option_comparisons_have_before_after_delta_and_react_without_ai(self):
-        app, _, _, _ = self.render_without_credentials()
-        with patch("src.ai.deal_review.run_deal_review") as review:
-            switch_stage(app, "treasury")
-            self.assertEqual([tab.label for tab in app.tabs], ["기존 운전자금", "매출채권 조기 현금화", "선물환 시뮬레이션", "Banker's Usance"])
-            self.assertGreaterEqual(sum(m.label == "변화" for m in app.metric), 7)
-            self.assertIn("0만원", [m.value for m in app.metric])
-            element_by_key(app.number_input, "receivable_purchase_day_input").set_value(70).run()
-            self.assertIn("D+70", [m.value for m in app.metric])
-            element_by_key(app.slider, "usd_hedge_ratio_input_slider").set_value(50.0).run()
-            visible = "\n".join(x.value for x in app.markdown)
-            self.assertIn("USD 40,000", visible)
-            self.assertNotIn("무엇을 먼저 확인할까요?", visible)
-        review.assert_not_called()
 
     def test_uploaded_role_pdfs_delegate_once_and_are_removed_after_analysis(self):
         captured = []
@@ -1213,8 +468,9 @@ class WebMvpTests(unittest.TestCase):
             patch("streamlit.file_uploader", return_value=SimpleNamespace(name="my-contract.pdf", getvalue=lambda: b"%PDF-1.4 test")),
             patch("src.ai.financialization.analyze_demo_documents", side_effect=extract) as extraction,
         ):
-            app = AppTest.from_file(Path(__file__).parents[1] / "app.py").run()
-            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
+            app = AppTest.from_file(Path(__file__).parents[1] / "app.py", default_timeout=30).run()
+            switch_view(app, "setup")
+            element_by_key(app.toggle, "show_documents").set_value(True).run()
             element_by_key(app.radio, "document_source").set_value("내 PDF 업로드").run()
             extraction.assert_not_called()
             element_by_key(app.button, "analyze_demo_documents").click().run()
@@ -1230,12 +486,57 @@ class WebMvpTests(unittest.TestCase):
             patch("streamlit.file_uploader", return_value=SimpleNamespace(name="bad.pdf", getvalue=lambda: b"not-pdf")),
             patch("src.ai.financialization.analyze_demo_documents") as extraction,
         ):
-            app = AppTest.from_file(Path(__file__).parents[1] / "app.py").run()
-            element_by_key(app.radio, "deal_input_mode").set_value("거래서류 불러오기").run()
+            app = AppTest.from_file(Path(__file__).parents[1] / "app.py", default_timeout=30).run()
+            switch_view(app, "setup")
+            element_by_key(app.toggle, "show_documents").set_value(True).run()
             element_by_key(app.radio, "document_source").set_value("내 PDF 업로드").run()
             element_by_key(app.button, "analyze_demo_documents").click().run()
             self.assertTrue(app.warning)
         extraction.assert_not_called()
+
+
+    def test_confirmed_document_apply_preserves_finance_assumptions(self):
+        app, _ = self.render_with_extraction()
+        element_by_key(app.checkbox, "ai_hedge_confirmation").check().run()
+        element_by_key(app.button, "apply_ai_proposal").click().run()
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(app.session_state["input_origin"], "문서 반영")
+        self.assertEqual(app.session_state["funding_rate_input"], 4.8)
+        self.assertEqual(app.session_state["available_cash_input"], 50000000.0)
+        self.assertEqual(app.session_state["ai_applied_patch"], app.session_state["ai_proposed_patch"])
+
+    def test_expected_scenario_is_explicit_and_stales_previous_review(self):
+        app = self.render()
+        switch_view(app, "report")
+        app.session_state["deal_review_run"] = review_result()
+        app.session_state["include_expected_company_events"] = True
+        app.run()
+        self.assertTrue(any("조건이 바뀌었습니다" in x.value for x in app.warning))
+        switch_view(app, "analysis")
+        self.assertIn("EXPECTED 포함 사용자 선택 시나리오", visible(app))
+
+    def test_statement_context_is_optional_and_does_not_overwrite_allocated_cash(self):
+        app = self.render()
+        app.session_state["financial_statement_analysis"] = extracted_statement()
+        switch_view(app, "report")
+        def review_current(*args, **kwargs):
+            return review_result(treasury_context=kwargs["treasury_context"])
+        with patch("src.ai.deal_review.run_deal_review", side_effect=review_current) as review:
+            element_by_key(app.button, "run_review").click().run()
+        self.assertEqual(list(app.exception), [])
+        self.assertIsNotNone(review.call_args.kwargs["treasury_context"].company_liquidity)
+        self.assertEqual(app.session_state["available_cash_input"], 50000000.0)
+        self.assertIn("회사 자금 맥락", visible(app))
+
+    def test_viewing_preset_does_not_mutate_base_or_stale_base_review(self):
+        app = self.render()
+        app.session_state["deal_review_run"] = review_result()
+        element_by_key(app.radio, "selected_scenario").set_value("복합 악화").run()
+        switch_view(app, "report")
+        self.assertIn(review_result().memo.headline, visible(app))
+        self.assertFalse(any("조건이 바뀌었습니다" in x.value for x in app.warning))
+        self.assertEqual(app.session_state["funding_rate_input"], 4.8)
+        self.assertEqual(app.session_state["collection_day_input"], 90)
 
 
 if __name__ == "__main__":

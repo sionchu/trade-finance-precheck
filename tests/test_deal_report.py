@@ -292,7 +292,7 @@ class DealReportTests(unittest.TestCase):
 
     def test_final_branding_and_company_treasury_sections(self):
         text, output = self.report_text(treasury_report_input())
-        self.assertIn("기업 수출거래 Treasury 사전점검 보고서", text)
+        self.assertIn("수출거래 AI 금융진단 보고서", text)
         self.assertNotIn("AI Trade Finance Pre-check", text)
         self.assertIn("Company-wide liquidity", text)
         report_input = treasury_report_input()
@@ -301,7 +301,7 @@ class DealReportTests(unittest.TestCase):
         self.assertEqual(report_input.base_result.funding.maximum_external_borrowing_krw, Decimal("69000000"))
         self.assertIn("2026-11-03 / D+60", text)
         self.assertIn("Banker's Usance", text)
-        self.assertIn("FX Treasury", text)
+        self.assertIn("외화위험 / 선물환", text)
         self.assertIn("회사 전체 유동성을 먼저 확인합니다", text)
         self.assertLessEqual(len(re.findall(rb"/Type\s*/Page\b", output)), 3)
 
