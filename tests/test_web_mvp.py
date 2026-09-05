@@ -268,12 +268,33 @@ class WebMvpTests(unittest.TestCase):
             app_path = Path(__file__).resolve().parents[1] / "app.py"
             app = AppTest.from_file(app_path, default_timeout=10).run()
             for label, value in (input_values or {}).items():
-                switch_stage(app, "liquidity" if label in ("운전자금 한도 총액", "현재 사용액") else "review")
+                switch_stage(
+                    app,
+                    "liquidity"
+                    if label in (
+                        "운전자금 한도 총액",
+                        "현재 사용액",
+                        "현재 실제 연 조달금리 (%)",
+                        "이번 거래에 실제 투입 가능한 회사자금 (KRW)",
+                    )
+                    else "deal" if label == "계약 회수일 (D+)" else "review",
+                )
                 next(
                     item for item in app.number_input if item.label == label
                 ).set_value(value)
             if input_values:
                 app.run()
+                if any(
+                    label not in (
+                        "운전자금 한도 총액",
+                        "현재 사용액",
+                        "현재 실제 연 조달금리 (%)",
+                        "이번 거래에 실제 투입 가능한 회사자금 (KRW)",
+                        "계약 회수일 (D+)",
+                    )
+                    for label in input_values
+                ):
+                    element_by_key(app.button, "calculate_scenario").click().run()
         self.last_deal_review = deal_review
         self.last_statement_extract = statement_extract
         self.assertEqual(app.exception, [])
@@ -348,8 +369,8 @@ class WebMvpTests(unittest.TestCase):
 
     def test_below_threshold_fx_is_not_described_as_available_buffer(self):
         app, _, _, _ = self.render_without_credentials({"USD/KRW": 1300.0})
-        visible = "\n".join(item.value for item in app.markdown)
-        self.assertIn("목표마진 유지선보다", visible)
+        visible = "\n".join(item.value for item in (*app.markdown, *app.info))
+        self.assertIn("마진 14.64% →", visible)
         self.assertNotIn("현재 여유 -", visible)
 
     def test_decision_first_information_hierarchy(self):
@@ -361,7 +382,14 @@ class WebMvpTests(unittest.TestCase):
         switch_stage(app, "review")
         self.assertTrue(any(item.key == "target_margin_input" for item in app.number_input))
         self.assertFalse(any(item.key == "sale_amount_input" for item in app.number_input))
-        self.assertIn("가정을 바꾸면 결과가 바로 달라집니다", [item.value for item in app.subheader])
+        self.assertIn("기본 결과와 변경 시나리오", [item.value for item in app.subheader])
+        self.assertTrue(any(item.key == "calculate_scenario" for item in app.button))
+        self.assertTrue(any("시나리오를 계산하세요" in item.value for item in app.info))
+        switch_stage(app, "liquidity")
+        labels = [item.label for item in app.number_input]
+        self.assertIn("현재 실제 연 조달금리 (%)", labels)
+        self.assertIn("이번 거래에 실제 투입 가능한 회사자금 (KRW)", labels)
+        self.assertTrue(any(item.key == "calculate_base_diagnosis" for item in app.button))
 
     def test_company_cash_plan_timeline_is_visible_and_confirmed_only(self):
         app, _, _, _ = self.render_without_credentials()
@@ -380,9 +408,9 @@ class WebMvpTests(unittest.TestCase):
         self.assertEqual(metrics["현재 가용현금"], "1억 2,000만원")
         self.assertEqual(metrics["최소 운영자금"], "7,000만원")
         self.assertEqual(metrics["현재 Buffer 초과 유동성"], "+5,000만원")
-        self.assertEqual(metrics["거래만 본 필요 은행자금"], "6,900만원")
+        self.assertEqual(metrics["거래 단독 필요 외부자금"], "6,900만원")
         self.assertEqual(
-            metrics["회사 기존 자금계획까지 포함한 필요 은행자금"],
+            metrics["회사 전체 최대 자금부족"],
             "8,900만원",
         )
         self.assertEqual(metrics["현재 미사용 운전자금 한도"], "7,000만원")
@@ -396,7 +424,7 @@ class WebMvpTests(unittest.TestCase):
             "기본 결과는 CONFIRMED만 포함합니다",
             "현재 입력 한도 초과 · 한도 부족 1,900만원",
             "2026-11-03 (D+60)",
-            "Deal-level 배정자금과 Company-wide 현금 포지션",
+            "거래 단독 배정자금과 회사 전체 현재 현금",
         ):
             self.assertIn(text, visible)
 
@@ -613,12 +641,12 @@ class WebMvpTests(unittest.TestCase):
         )
         self.assertIn("재무제표상 현금 ≠ 이 거래에 투입 가능한 자금", visible)
         self.assertNotIn("이익잉여금", visible)
-        switch_stage(app, "review")
+        switch_stage(app, "liquidity")
         self.assertEqual(
             next(
                 item
                 for item in app.number_input
-                if item.label == "이번 거래에 투입 가능한 회사자금 (KRW)"
+                if item.label == "이번 거래에 실제 투입 가능한 회사자금 (KRW)"
             ).value,
             50000000.0,
         )
@@ -932,7 +960,7 @@ class WebMvpTests(unittest.TestCase):
 
     def test_public_market_surface_is_ksure_only(self):
         app, _, _, _ = self.render_without_credentials()
-        switch_stage(app, "result")
+        switch_stage(app, "review")
         button_labels = [item.label for item in app.button]
         self.assertIn("K-SURE 결제정보 불러오기", button_labels)
         self.assertNotIn("공식 기준환율 불러오기", button_labels)
@@ -943,7 +971,7 @@ class WebMvpTests(unittest.TestCase):
         )
 
     def test_collection_day_updates_receivable_comparison_label(self):
-        app, _, _, _ = self.render_without_credentials({"결제일 (D+)": 120})
+        app, _, _, _ = self.render_without_credentials({"계약 회수일 (D+)": 120})
         switch_stage(app, "treasury")
         visible = "\n".join(item.value for item in app.markdown)
         self.assertIn("D+120에 입금받기", visible)
@@ -1129,11 +1157,15 @@ class WebMvpTests(unittest.TestCase):
             switch_stage(app, "review")
             element_by_key(app.slider, "target_margin_input_slider").set_value(15.0).run()
             self.assertEqual(element_by_key(app.number_input, "target_margin_input").value, 15.0)
-            self.assertEqual(metric_by_label(app, "목표 마진").value, "15.00%")
+            self.assertEqual(metric_by_label(app, "목표 마진").value, "14.00%")
+            self.assertTrue(any("아직 계산하지 않음" in item.value for item in app.warning))
             element_by_key(app.number_input, "usd_krw_input").set_value(1330.0).run()
-            self.assertEqual(metric_by_label(app, "실제로 남는 마진").value, "11.20%")
-            element_by_key(app.button, "usd_krw_input_기준").click().run()
             self.assertEqual(metric_by_label(app, "실제로 남는 마진").value, "14.64%")
+            element_by_key(app.button, "calculate_scenario").click().run()
+            self.assertEqual(metric_by_label(app, "목표 마진").value, "15.00%")
+            self.assertTrue(any("마진 14.64% →" in item.value for item in app.info))
+            element_by_key(app.button, "usd_krw_input_기준").click().run()
+            self.assertTrue(any("아직 계산하지 않음" in item.value for item in app.warning))
             switch_stage(app, "liquidity")
             switch_stage(app, "review")
             self.assertEqual(element_by_key(app.number_input, "target_margin_input").value, 15.0)
@@ -1148,7 +1180,7 @@ class WebMvpTests(unittest.TestCase):
         element_by_key(app.number_input, "credit_total_limit_input").set_value(110000000.0).run()
         visible = "\n".join(item.value for item in (*app.error, *app.markdown))
         self.assertIn("900만원", visible)
-        self.assertEqual(metric_by_label(app, "회사 기존 자금계획까지 포함한 필요 은행자금").value, "8,900만원")
+        self.assertEqual(metric_by_label(app, "회사 전체 최대 자금부족").value, "8,900만원")
         switch_stage(app, "treasury")
         self.assertEqual(element_by_key(app.number_input, "credit_total_limit_input").value, 110000000.0)
 

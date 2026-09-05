@@ -15803,7 +15803,7 @@ function uE({ data: i, setStateValue: l, setTriggerValue: u }) {
       ] }, g.id);
     }) }),
     /* @__PURE__ */ rt.jsx(P2, { mode: "wait", children: o === "result" && /* @__PURE__ */ rt.jsxs(Np.div, { className: "stage-panel stage-panel--result", initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0 }, children: [
-      /* @__PURE__ */ rt.jsx("h2", { children: "현재 입력 기준 결과" }),
+      /* @__PURE__ */ rt.jsx("h2", { children: "현재 계산 기준 종합 결과" }),
       /* @__PURE__ */ rt.jsx("div", { className: "decision-snapshot", children: i.snapshot.map((g) => /* @__PURE__ */ rt.jsxs("div", { children: [
         /* @__PURE__ */ rt.jsx("span", { children: g.label }),
         /* @__PURE__ */ rt.jsx("strong", { children: g.value }),

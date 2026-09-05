@@ -26,7 +26,7 @@ export default function ExperienceShell({ data, setStateValue, setTriggerValue }
 
       <nav className="stages" aria-label="사전점검 단계">{data.stages.map(stage => { const Icon=icons[stage.id]; const selected=activeStage===stage.id; return <button className={`stage stage--${selected?"active":stage.state}`} type="button" key={stage.id} disabled={stage.state==="blocked"} aria-current={selected?"step":undefined} onClick={()=>selectStage(stage)}><Icon size={19} aria-hidden/><span>{stage.label}</span>{selected&&<motion.span className="stage-indicator" layoutId="stage-indicator"/>}</button>; })}</nav>
       <AnimatePresence mode="wait">{activeStage==="result"&&<motion.div className="stage-panel stage-panel--result" key={activeStage} initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} exit={{opacity:0}}>
-          <h2>현재 입력 기준 결과</h2>
+          <h2>현재 계산 기준 종합 결과</h2>
           <div className="decision-snapshot">{data.snapshot.map(card=><div key={card.label}><span>{card.label}</span><strong>{card.value}</strong><small>{card.detail}</small></div>)}</div>
           <h3>거래 검토 요약</h3>
           {data.reviewState.loading?<p>현재 거래 근거를 확인하고 있습니다.</p>:data.reviewState.error?<p className="error">{data.reviewState.error}</p>:data.reviewState.current?<><h3>{data.reviewState.headline}</h3><p>{data.reviewState.summary}</p><details><summary>상세 설명 보기</summary><small>확인 완료 · {data.reviewState.usedTools?.join(" · ")}</small></details></>:data.reviewState.hasResult?<p>조건이 변경되어 다시 검토가 필요합니다.</p>:<p className="support">현재 계산의 의미를 짧게 검토할 수 있습니다.</p>}

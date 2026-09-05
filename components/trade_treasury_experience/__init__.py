@@ -23,20 +23,20 @@ _CSS = "/* bundled component */\n" + (_BUILD_DIR / "index.css").read_text(encodi
 
 
 STAGES = (
-    {"id": "deal", "label": "거래 입력"},
-    {"id": "review", "label": "판단 기준"},
+    {"id": "deal", "label": "거래 정보"},
     {"id": "liquidity", "label": "회사 자금"},
-    {"id": "treasury", "label": "대응 시뮬레이션"},
-    {"id": "result", "label": "결과·보고서"},
+    {"id": "review", "label": "시나리오 분석"},
+    {"id": "treasury", "label": "대응안 비교"},
+    {"id": "result", "label": "종합 진단"},
 )
 VALID_STAGES = {stage["id"] for stage in STAGES}
 
 STAGE_GUIDE = (
-    {"title": "거래 입력", "description": "PDF 또는 직접 입력으로 거래 사실을 확인합니다.", "next": "다음: 판단 기준을 조절합니다."},
-    {"title": "판단 기준", "description": "목표·환율·금리·회수일을 바꾸면 결과가 즉시 달라집니다.", "next": "다음: 회사 자금계획을 합칩니다."},
-    {"title": "회사 자금", "description": "회사 기존 일정과 거래를 같은 Timeline에서 비교합니다.", "next": "다음: 부족분을 메울 조건을 비교합니다."},
-    {"title": "대응 시뮬레이션", "description": "운전자금·매출채권·선물환·Usance의 현재→대안→변화를 봅니다.", "next": "다음: 결과와 보고서를 확인합니다."},
-    {"title": "결과·보고서", "description": "계산 결과를 먼저 보고 선택적으로 짧은 거래 검토를 실행합니다.", "next": "보고서를 저장하거나 조건을 다시 조절합니다."},
+    {"title": "거래 정보", "description": "PDF 또는 직접 입력으로 계약 사실을 확인합니다.", "next": "다음: 회사의 현재 자금조건을 입력합니다."},
+    {"title": "회사 자금", "description": "현재 현금·한도·금리와 기존 자금계획을 확인합니다.", "next": "입력을 마치면 기본 진단을 계산합니다."},
+    {"title": "시나리오 분석", "description": "환율·금리·회수지연 가정을 적용해 기본 결과와 비교합니다.", "next": "다음: 부족분과 위험의 대응안을 비교합니다."},
+    {"title": "대응안 비교", "description": "운전자금·매출채권·선물환·Usance의 현재→대안→변화를 봅니다.", "next": "다음: 종합 진단과 보고서를 확인합니다."},
+    {"title": "종합 진단", "description": "결정론적 결과를 먼저 보고 선택적으로 거래 검토를 실행합니다.", "next": "보고서를 저장하거나 입력을 다시 조절합니다."},
 )
 
 HELP_TOPICS = (
@@ -156,7 +156,7 @@ def _component_html() -> str:
         '<h2>용어·계산 기준</h2>'
         f'<div class="help-topic-list">{topics}</div>'
         '<p class="help-footnote">조건을 바꾼 뒤 이전 결과가 남아 있다면 상단의 '
-        '<strong>결과·보고서</strong> 단계에서 현재 조건으로 다시 검토하세요.</p>'
+        '<strong>종합 진단</strong> 단계에서 현재 조건으로 다시 검토하세요.</p>'
         "</div></details>"
     )
 

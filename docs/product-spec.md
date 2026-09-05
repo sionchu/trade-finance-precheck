@@ -1645,8 +1645,8 @@ frozen.
 31. T6-B — React Experience Shell
 
 T6-B adds one internal precompiled Streamlit Components v2 React and TypeScript bundle. It
-establishes exactly five presentation stages: 거래 조건, 회사 유동성, Treasury
-검토, AI 거래 검토, and 결과 / 공유. `active_stage` is persistent component UI
+establishes exactly five presentation stages: 거래 정보, 회사 자금, 시나리오 분석,
+대응안 비교, and 종합 진단. `active_stage` is persistent component UI
 state; one optional `primary_action` trigger is reserved for experience wiring
 and does not execute AI in this slice.
 
@@ -1666,10 +1666,9 @@ provenance through editable presentation rows; source is read-only. This does
 not change the frozen Company Liquidity Timeline calculation.
 
 T6-B did not relocate or remove the existing native Streamlit sections.
-T6-C adds guided orchestration without changing finance: condition → user choice
-→ bounded review → result → user-selected response comparison. `active_stage`,
-`review_goal`, and `response_action` are component state; React never calculates
-finance. The existing Treasury evidence tool now also reads the deterministic
+T6-C adds guided orchestration without changing finance. React owns compact stage
+navigation while native Streamlit owns inputs, calculations and actions. `active_stage`
+is component state; React never calculates finance. The existing Treasury evidence tool now also reads the deterministic
 Company Liquidity Timeline and current-line capacity. No new Agent, tool, retry,
 or simulated tool-progress sequence is introduced.
 
@@ -1677,3 +1676,9 @@ T6-D keeps the same report path and adds only current, already-computed Company
 Liquidity, Funding, FX Treasury, Banker's Usance and current Deal Review evidence.
 The report never invokes AI or external data, and a stale review is omitted.
 `docs/submission.md` is the single canonical competition-submission source.
+
+### Workflow / calculation / official-data RE0
+
+The canonical user order is 거래 정보 → 회사 자금 → 시나리오 분석 → 대응안 비교 → 종합 진단. 계약 회수조건은 거래 사실이며, 회수지연은 별도 시나리오다. 현재 실제 조달금리와 거래 투입가능 회사자금은 회사의 현재 조건으로 분류한다. 기본 진단과 시나리오에는 명시적 계산 경계를 두며, 편집 중인 값이 마지막 계산값과 다르면 재계산 전 상태임을 표시한다.
+
+공식 데이터는 자동 호출하지 않는다. K-SURE 결제정보는 사용자가 명시적으로 불러온 국가·업종 집계 참고정보이며 출처와 기준일을 함께 표시한다. 한국수출입은행 기준환율의 공개 배포 신뢰성이 검증되기 전에는 데모 기준값을 공식값으로 표시하지 않는다. ECOS 조달금리와 기업경영분석 업종 수익성 수치는 신뢰 가능한 계열·업종 매핑과 공개 배포 검증 전까지 숫자를 노출하지 않는다.

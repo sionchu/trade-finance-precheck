@@ -28,11 +28,11 @@ class ExperienceShellTests(unittest.TestCase):
         self.assertTrue(callable(trade_treasury_experience))
         self.assertEqual(
             [stage["id"] for stage in STAGES],
-            ["deal", "review", "liquidity", "treasury", "result"],
+            ["deal", "liquidity", "review", "treasury", "result"],
         )
         self.assertEqual(
             [stage["label"] for stage in STAGES],
-            ["거래 입력", "판단 기준", "회사 자금", "대응 시뮬레이션", "결과·보고서"],
+            ["거래 정보", "회사 자금", "시나리오 분석", "대응안 비교", "종합 진단"],
         )
 
     def test_python_supplies_canonical_formatted_snapshot_with_plain_language(self):
@@ -98,7 +98,7 @@ class ExperienceShellTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, source)
             self.assertNotIn(forbidden, _JS)
-        for expected in ("현재 입력 기준 결과", "이 조건으로 거래 검토"):
+        for expected in ("현재 계산 기준 종합 결과", "이 조건으로 거래 검토"):
             self.assertIn(expected, _JS)
 
     def test_shell_owns_navigation_not_duplicate_stage_ctas(self):

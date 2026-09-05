@@ -4,6 +4,8 @@ A Company-aware Trade Treasury Pre-check for evaluating one export Deal's econom
 
 The canonical product definition is [docs/product-spec.md](docs/product-spec.md).
 
+The public workflow is `거래 정보 → 회사 자금 → 시나리오 분석 → 대응안 비교 → 종합 진단`. Contract facts and current company conditions establish the base calculation; FX, funding-rate and collection-delay assumptions are applied through an explicit scenario calculation action.
+
 ## Current state
 
 The repository contains the frozen Deal Economics, Company Liquidity, and FX Treasury foundation: deterministic

@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal
 import os
@@ -471,19 +472,31 @@ with input_group("비용 및 지급", {"deal"} if input_mode == "직접 입력" 
         "물류·통관비 지급일 (D+)", min_value=0, value=logistics.payment_day, step=1
     )
 
-with input_group("목표와 조달 가정", {"review"}):
+with input_group("현재 회사·거래 자금조건", {"liquidity"}):
+    funding_rate_percent = exact_input("현재 실제 연 조달금리 (%)", key="funding_rate_input", value=float(reference.annual_funding_rate * Decimal("100")), min_value=0.0, max_value=25.0, step=0.1)
+    available_cash = exact_input(
+        "이번 거래에 실제 투입 가능한 회사자금 (KRW)", min_value=0.0,
+        value=float(reference.available_cash_krw), step=1000000.0,
+    )
+    st.caption("현재 회사 조건 · 시나리오 가정이 아닙니다.")
+
+with input_group("판단 기준", {"review"}):
     target_margin_percent = scenario_input("목표 마진 (%)", key="target_margin_input", value=float(reference.target_margin * Decimal("100")), min_value=5.0, max_value=25.0, step=0.1)
     target_live_result = st.empty()
     with st.expander("업종 수익성 참고"):
         st.write("한국은행 기업경영분석 · 업종별 매출액영업이익률")
         st.link_button("한국은행 공식 기업경영분석 자료", "https://www.bok.or.kr/portal/bbs/B0000501/view.do?menuNo=200690&nttId=10094231")
         st.caption("공식 수치·기준연도를 연결하기 전에는 숫자를 표시하지 않습니다. Financing-adjusted Deal Margin과 계산 정의가 다른 참고지표입니다.")
-    funding_rate_percent = scenario_input("실제 연 조달금리 (%)", key="funding_rate_input", value=float(reference.annual_funding_rate * Decimal("100")), min_value=0.0, max_value=25.0, step=0.1)
-    with st.expander("거래 단독 배정자금"):
-        available_cash = exact_input(
-            "이번 거래에 투입 가능한 회사자금 (KRW)", min_value=0.0,
-            value=float(reference.available_cash_krw), step=1000000.0,
-        )
+    funding_stress_pp = scenario_input("조달금리 Stress (+%p)", key="funding_stress_pp_input", value=1.0, min_value=0.0, max_value=10.0, step=0.1)
+    collection_delay_days = scenario_input("회수지연 Stress (+일)", key="collection_delay_days_input", value=30, min_value=0, max_value=180, step=1)
+    st.write(
+        f"현재 실제 조달금리 **{funding_rate_percent:.2f}%** → 분석금리 "
+        f"**{funding_rate_percent + funding_stress_pp:.2f}%**"
+    )
+    st.write(
+        f"계약 회수조건 **D+{int(st.session_state['collection_day_input'])}** → "
+        f"분석 회수시점 **D+{int(st.session_state['collection_day_input']) + int(collection_delay_days)}**"
+    )
 
 with input_group("환율 시나리오", {"review"}):
     st.caption("기준환율 · 데모 USD 1,400 / JPY 900 (100 JPY) · 공식 관측값 아님")
@@ -495,9 +508,31 @@ with input_group("환율 시나리오", {"review"}):
     st.caption("시나리오만 조절합니다. 공식 환율 API의 배포 경로는 현재 사용하지 않습니다.")
     fx_live_result = st.empty()
 
-with input_group("회수 시점 가정", {"deal", "review"}):
-    collection_day = scenario_input("결제일 (D+)", key="collection_day_input", value=reference.sale.collection_day, min_value=0, max_value=365, step=1)
-    collection_live_result = st.empty()
+with input_group("계약 회수조건", {"deal"}):
+    collection_day = exact_input("계약 회수일 (D+)", key="collection_day_input", min_value=0, max_value=365, step=1)
+    st.caption("계약 사실입니다. 회수지연 Stress는 시나리오 분석에서 별도로 입력합니다.")
+
+scenario_submit_slot = st.empty()
+with scenario_submit_slot.container():
+    scenario_submitted = st.button("시나리오 계산", type="primary", key="calculate_scenario")
+if active_stage != "review":
+    scenario_submit_slot.empty()
+
+scenario_edit = {
+    "target": decimal_from_widget(target_margin_percent),
+    "usd": decimal_from_widget(usd_krw),
+    "jpy": decimal_from_widget(jpy_krw),
+    "rate_stress": decimal_from_widget(funding_stress_pp),
+    "delay": int(collection_delay_days),
+}
+if "applied_scenario" not in st.session_state:
+    st.session_state["applied_scenario"] = scenario_edit
+    st.session_state["scenario_calculated"] = False
+if scenario_submitted:
+    st.session_state["applied_scenario"] = scenario_edit
+    st.session_state["scenario_calculated"] = True
+applied_scenario = st.session_state["applied_scenario"]
+scenario_is_current = applied_scenario == scenario_edit
 
 deal = DealCase(
     sale=Sale(
@@ -517,10 +552,18 @@ deal = DealCase(
     ),
     available_cash_krw=decimal_from_widget(available_cash),
     annual_funding_rate=decimal_from_widget(funding_rate_percent) / Decimal("100"),
-    target_margin=decimal_from_widget(target_margin_percent) / Decimal("100"),
+    target_margin=applied_scenario["target"] / Decimal("100"),
 )
-fx = FxRates(decimal_from_widget(usd_krw), decimal_from_widget(jpy_krw))
+fx = reference_rates
 base_result = evaluate_deal(deal, fx)
+
+scenario_deal = replace(
+    deal,
+    sale=replace(deal.sale, collection_day=deal.sale.collection_day + applied_scenario["delay"]),
+    annual_funding_rate=deal.annual_funding_rate + applied_scenario["rate_stress"] / Decimal("100"),
+)
+scenario_fx = FxRates(applied_scenario["usd"], applied_scenario["jpy"])
+selected_scenario_result = evaluate_deal(scenario_deal, scenario_fx)
 
 scenario_results = canonical_scenarios(deal, fx)
 combined_result = scenario_results[Scenario.COMBINED]
@@ -543,24 +586,25 @@ except ValueError:
     pass
 
 if active_stage == "review":
-    target_live_result.info(
-        f"현재 마진 {percent(base_result.financing_adjusted_deal_margin)} · "
-        f"목표 대비 {(base_result.financing_adjusted_deal_margin - deal.target_margin) * 100:+.2f}%p · "
-        f"복합 악화 시 {percent(combined_result.financing_adjusted_deal_margin)}"
-    )
-    fx_live_result.info(
-        f"현재 마진 {percent(base_result.financing_adjusted_deal_margin)} · "
-        f"거래 단독 외부자금 {krw_consumer(base_result.funding.maximum_external_borrowing_krw)} · "
-        f"목표 유지선 {f'{target_threshold:,.2f}원' if target_threshold is not None else '계산 불가'}"
-    )
-    collection_live_result.caption(
-        f"거래 단독 외부자금 {krw_consumer(base_result.funding.maximum_external_borrowing_krw)} · 피크 D+{peak_point.day}"
-    )
+    if not scenario_is_current:
+        st.warning("변경된 조건이 있습니다 · 아직 계산하지 않음")
+    elif not st.session_state.get("scenario_calculated"):
+        st.info("가정을 확인한 뒤 시나리오를 계산하세요.")
+    else:
+        target_live_result.info(
+            f"마진 {percent(base_result.financing_adjusted_deal_margin)} → "
+            f"{percent(selected_scenario_result.financing_adjusted_deal_margin)} · "
+            f"Δ {(selected_scenario_result.financing_adjusted_deal_margin - base_result.financing_adjusted_deal_margin) * 100:+.2f}%p"
+        )
+        fx_live_result.info(
+            f"거래 단독 필요 외부자금 {krw_consumer(base_result.funding.maximum_external_borrowing_krw)} → "
+            f"{krw_consumer(selected_scenario_result.funding.maximum_external_borrowing_krw)}"
+        )
 
 deal_primary_slot = st.empty()
 deal_primary_context = deal_primary_slot.container()
 deal_primary_context.__enter__()
-st.subheader("가정을 바꾸면 결과가 바로 달라집니다")
+st.subheader("기본 결과와 변경 시나리오")
 meets_target = base_result.financing_adjusted_deal_margin >= deal.target_margin
 with st.container(border=True):
     st.badge("계산 결과", color="blue")
@@ -582,7 +626,7 @@ with st.container(border=True):
     else:
         st.error("목표 미달")
 
-st.markdown("### 거래 단독 계산")
+st.markdown("### 기본 진단과 악화 조건 경계")
 signal_columns = st.columns(3)
 with signal_columns[0].container(border=True):
     st.markdown("#### 달러가 어디까지 내려가면 위험할까요?")
@@ -814,7 +858,7 @@ if financialization is not None:
         extraction_valid = False
         st.error("환헤지 정보가 존재하거나 불명확하여 문서 제안을 거래에 반영할 수 없습니다.")
 
-    st.info("문서의 회수 기산점은 D0와 자동 연결하지 않습니다. 판단 기준 단계에서 회수일을 확인하세요.")
+    st.info("문서의 회수 기산점은 D0와 자동 연결하지 않습니다. 거래 정보 단계에서 계약 회수일을 확인하세요.")
     st.caption(
         "지급일 적용 규칙: 구매계약일을 현재 거래의 D+0으로 명시적으로 취급할 때만 "
         "CONTRACT_DATE +30을 D+30으로 제안합니다."
@@ -1097,7 +1141,7 @@ if active_stage != "review":
 liquidity_stage_slot = st.empty()
 liquidity_stage_context = liquidity_stage_slot.container()
 liquidity_stage_context.__enter__()
-st.subheader("회사 자금으로 대금 회수일까지 버틸 수 있을까요?")
+st.subheader("현재 회사 조건으로 이 거래를 감당할 수 있을까요?")
 st.badge("자금 수용력 · 승인 예측 아님", color="blue")
 liquidity_metrics = st.columns(3)
 liquidity_metrics[0].metric(
@@ -1275,6 +1319,23 @@ st.caption(
     "기본 결과는 CONFIRMED만 포함합니다. EXPECTED는 선택할 때만 별도 입력 시나리오로 포함됩니다."
 )
 
+base_input_signature = repr((
+    deal,
+    company_as_of_date,
+    company_current_cash,
+    company_minimum_cash,
+    tuple(tuple(sorted(row.items())) for row in st.session_state["company_cash_plan_rows"]),
+    include_expected_company_events,
+    credit_line,
+))
+if st.button("기본 진단 계산", type="primary", key="calculate_base_diagnosis"):
+    st.session_state["base_calculation_signature"] = base_input_signature
+base_calculation_current = (
+    st.session_state.get("base_calculation_signature") == base_input_signature
+)
+if not base_calculation_current:
+    st.info("입력값을 확인한 뒤 기본 진단을 계산하세요.")
+
 company_liquidity_comparison = None
 company_credit_capacity = None
 experience_data = None
@@ -1308,11 +1369,11 @@ else:
 
     comparison_metrics = st.columns(3)
     comparison_metrics[0].metric(
-        "거래만 본 필요 은행자금",
+        "거래 단독 필요 외부자금",
         krw_consumer(base_result.funding.maximum_external_borrowing_krw),
     )
     comparison_metrics[1].metric(
-        "회사 기존 자금계획까지 포함한 필요 은행자금",
+        "회사 전체 최대 자금부족",
         krw_consumer(company_liquidity_comparison.company_with_deal.peak_liquidity_gap_krw),
     )
     comparison_metrics[2].metric(
@@ -1367,7 +1428,7 @@ else:
                 remaining_gap_status=remaining_gap_status,
             )
     st.caption(
-        "Deal-level 배정자금과 Company-wide 현금 포지션은 서로 다른 입력입니다. "
+        "거래 단독 배정자금과 회사 전체 현재 현금은 서로 다른 입력입니다. "
         "재무제표상 현금도 현재 가용현금을 자동 설정하지 않습니다."
     )
     timeline_rows = [
@@ -1882,7 +1943,7 @@ review_context_container = review_context_slot.container()
 review_context_container.__enter__()
 st.subheader("공식 시장 참고정보")
 st.write(
-    "공식 데이터는 명시적으로 불러옵니다. K-SURE 정보는 참고 Context로만 "
+    "공식 데이터는 명시적으로 불러옵니다. K-SURE 정보는 결제 참고정보로만 "
     "사용되며 거래조건이나 결제일을 자동으로 변경하지 않습니다."
 )
 with st.container(border=True):
@@ -1963,7 +2024,7 @@ with st.container(border=True):
                     )
         st.info("K-SURE 집계정보는 현재 거래의 결제일을 자동으로 변경하지 않습니다.")
 review_context_container.__exit__(None, None, None)
-if active_stage != "result":
+if active_stage != "review":
     review_context_slot.empty()
 
 current_payment_context = st.session_state.get("ksure_payment_context")
@@ -2009,6 +2070,7 @@ if active_stage == "result" and not treasury_review_ready:
 stored_review_run = st.session_state.get("deal_review_run")
 stored_review_current = bool(
     stored_review_run is not None
+    and scenario_is_current
     and is_current_deal_review(
         stored_review_run,
         review_question,
@@ -2027,9 +2089,9 @@ tool_labels = {
 if experience_data is not None:
     stage_states = {
         "deal": "complete",
-        "liquidity": "complete" if company_liquidity_comparison is not None else "ready",
+        "liquidity": "complete" if company_liquidity_comparison is not None and base_calculation_current else "ready",
+        "review": "complete" if scenario_is_current and st.session_state.get("scenario_calculated") else "ready",
         "treasury": "complete" if treasury_review_ready else "ready",
-        "review": "ready",
         "result": "ready",
     }
     experience_data["stages"] = [
@@ -2102,7 +2164,7 @@ if active_stage == "result" and (
 review_run = st.session_state.get("deal_review_run")
 review_is_current = False
 if review_run is not None:
-    review_is_current = is_current_deal_review(
+    review_is_current = scenario_is_current and is_current_deal_review(
         review_run,
         review_question,
         deal,

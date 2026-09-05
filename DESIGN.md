@@ -63,7 +63,7 @@ The experience uses progressive disclosure rather than forcing a manual into the
 - Financial terms are individual clickable disclosure items with one plain-language definition and one caution/boundary sentence.
 - The help content is one canonical Python presentation SSOT in `components/trade_treasury_experience/__init__.py`; do not create separate tooltip, popover, and manual copies that can drift.
 - Core information needed to make the next decision stays visible. Definitions and caveats may be progressively disclosed.
-- If conditions change, tell the user exactly what to do next: return to `결과·보고서` and run the current conditions again.
+- If conditions change, distinguish edited inputs from the last calculated result and tell the user which calculation to run again.
 
 ## Interaction
 
@@ -96,7 +96,7 @@ User-facing shell copy is authored in `ExperienceShell.tsx` and deployed from th
 
 ## Guided decision loop
 
-The five stages are 거래 입력 → 판단 기준 → 회사 자금 → 대응 시뮬레이션 → 결과·보고서. Internal stage IDs remain compatible; `review` now means judgment assumptions. The prominent review-goal selector is removed and Agent review defaults to overall. Facts use exact inputs; assumptions use synchronized sliders and exact inputs sharing one authoritative key. Stage-local controls persist across navigation. Company cash uses the existing timeline as a native step chart. Alternatives show current → option → delta, including unchanged bank principal. Deterministic results lead; the single optional Agent action and report live together in the final stage. Tool completion is shown only after actual success.
+The five stages are 거래 정보 → 회사 자금 → 시나리오 분석 → 대응안 비교 → 종합 진단. Internal stage IDs remain compatible. Contract facts use exact inputs. Current company cash, Deal allocation, credit and actual funding rate live in 회사 자금. Target, FX, funding-rate stress and collection-delay stress live in 시나리오 분석 and require an explicit calculation action; edited and last-applied values are visibly distinct. Company cash uses the existing timeline as a native step chart. Alternatives show 현재 → 대안 → 변화, including unchanged bank principal. Deterministic results lead; the single optional Agent action and report live together in 종합 진단. Tool completion is shown only after actual success.
 
 ## Final product freeze
 
